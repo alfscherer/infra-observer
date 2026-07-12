@@ -22,10 +22,15 @@ func run(args []string) error {
 		usage()
 		return nil
 	}
+	rest := args[1:]
 	switch args[0] {
 	case "version":
 		fmt.Println(version)
 		return nil
+	case "config":
+		return cmdConfig(rest)
+	case "inventory":
+		return cmdInventory(rest)
 	case "help", "-h", "--help":
 		usage()
 		return nil
@@ -34,8 +39,12 @@ func run(args []string) error {
 }
 
 func usage() {
-	fmt.Println(`usage: infra-observer <command>
+	fmt.Println(`usage: infra-observer <command> [flags]
 
 commands:
-  version   print the build version`)
+  config validate     load and validate the configuration and inventory
+  inventory list      print registered devices
+  version             print the build version
+
+Every command accepts --config (default $INFRA_OBSERVER_CONFIG or configs/config.yaml).`)
 }

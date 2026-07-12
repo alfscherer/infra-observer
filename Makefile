@@ -34,3 +34,7 @@ check: lint test ## everything a change must pass before commit
 
 clean:
 	rm -rf bin dist
+
+.PHONY: validate-config
+validate-config: build ## validate configuration and inventory
+	$(BIN) config validate --config configs/config.yaml

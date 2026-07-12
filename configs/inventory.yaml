@@ -1,0 +1,75 @@
+# Synthetic lab inventory. Every device is served by the local simulator
+# (see docs/SIMULATION in README); nothing here refers to real hardware.
+devices:
+  - id: switch-01
+    hostname: switch-01.lab.example
+    management_address: simulator:16101
+    device_type: switch
+    vendor: acme
+    model: as-24p
+    serial_number: SIM-SW-0001
+    site: lab
+    tags: [core, automation-enabled]
+    capabilities: [snmp, interface-admin]
+    credentials_ref: snmp/lab
+    collection: {protocol: snmp, profile: generic-switch, interval: 10s}
+  - id: switch-02
+    hostname: switch-02.lab.example
+    management_address: simulator:16102
+    device_type: switch
+    vendor: acme
+    model: as-24p
+    serial_number: SIM-SW-0002
+    site: lab
+    tags: [access]
+    capabilities: [snmp, interface-admin]
+    credentials_ref: snmp/lab
+    collection: {protocol: snmp, profile: generic-switch, interval: 10s}
+  - id: ap-01
+    hostname: ap-01.lab.example
+    management_address: simulator:16103
+    device_type: access_point
+    vendor: globex
+    model: wave-6
+    serial_number: SIM-AP-0001
+    site: lab
+    tags: [wireless, automation-enabled]
+    capabilities: [snmp, service-restart]
+    credentials_ref: snmp/lab
+    collection: {protocol: snmp, profile: vendor-ap, interval: 10s}
+  - id: server-01
+    hostname: server-01.lab.example
+    management_address: simulator:16104
+    device_type: server
+    vendor: generic
+    model: vm
+    serial_number: SIM-SRV-0001
+    site: lab
+    tags: [automation-enabled]
+    capabilities: [snmp, service-restart, diagnostics]
+    credentials_ref: snmp/lab
+    collection: {protocol: snmp, profile: generic-host, interval: 10s}
+  - id: workstation-01
+    hostname: workstation-01.lab.example
+    management_address: simulator:16105
+    device_type: workstation
+    vendor: generic
+    model: desktop
+    serial_number: SIM-WS-0001
+    site: lab
+    tags: [automation-enabled]
+    capabilities: [snmp, service-restart, diagnostics]
+    credentials_ref: snmp/lab
+    collection: {protocol: snmp, profile: generic-host, interval: 15s}
+  - id: ups-01
+    hostname: ups-01.lab.example
+    management_address: simulator:16106
+    device_type: ups
+    vendor: initech
+    model: rack-1500
+    serial_number: SIM-UPS-0001
+    site: lab
+    tags: [power]
+    capabilities: [snmp]
+    credentials_ref: snmp/lab
+    collection: {protocol: snmp, profile: generic-ups, interval: 10s}

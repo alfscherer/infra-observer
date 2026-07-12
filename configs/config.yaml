@@ -1,0 +1,74 @@
+# infra-observer configuration. Every scalar can be overridden from the
+# environment, e.g. INFRA_OBSERVER_PROCESSING_WORKERS=16.
+logging:
+  level: info
+  format: json
+
+nats:
+  url: nats://nats:4222
+
+database:
+  # Normally supplied via INFRA_OBSERVER_DATABASE_URL.
+  url: ""
+  max_conns: 8
+
+inventory:
+  file: configs/inventory.yaml
+
+collectors:
+  snmp:
+    workers: 20          # global cap on concurrent device polls
+    timeout: 2s
+    retries: 2
+    default_interval: 15s
+    profiles_dir: configs/profiles
+    max_repetitions: 20
+
+processing:
+  workers: 8             # shards; per-device ordering is preserved within a shard
+  queue_size: 64
+  max_deliver: 5
+  ack_wait: 30s
+  retry_delay: 2s
+  stale_after: 90s
+  sweep_interval: 15s
+  normalization_file: configs/normalization.yaml
+  states_file: configs/states.yaml
+  rules_file: configs/rules.yaml
+
+scripting:
+  enabled: true
+  directories:
+    - ./scripts
+  workers: 4
+  queue_size: 128
+  execution_timeout: 250ms
+  quarantine_after: 5
+  endpoints:
+    alerts-webhook:
+      url_ref: endpoints/alerts-webhook
+      timeout: 2s
+
+automation:
+  default_dry_run: true
+  policies_file: configs/automation.yaml
+  tick_interval: 5s
+  workers: 4
+
+api:
+  listen: ":8080"
+  default_page_size: 50
+  max_page_size: 500
+
+secrets:
+  dir: secrets
+
+scripts:
+  transforms:
+    normalize-cpu:
+      enabled: true
+  integrations:
+    webhook:
+      enabled: true
+      config:
+        endpoint_ref: alerts-webhook
