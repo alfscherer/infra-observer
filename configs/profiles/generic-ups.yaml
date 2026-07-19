@@ -1,0 +1,12 @@
+id: generic-ups
+description: UPS-MIB (RFC 1628) battery and output state.
+include: [system]
+match:
+  sysobjectid_prefix: "1.3.6.1.4.1.32473.4"
+metrics:
+  # 1 unknown, 2 batteryNormal, 3 batteryLow, 4 batteryDepleted
+  - {name: snmp.upsBatteryStatus, oid: 1.3.6.1.2.1.33.1.2.1.0, type: integer}
+  - {name: snmp.upsEstimatedChargeRemaining, oid: 1.3.6.1.2.1.33.1.2.4.0, type: gauge}
+  # 3 normal (mains), 5 battery
+  - {name: snmp.upsOutputSource, oid: 1.3.6.1.2.1.33.1.4.1.0, type: integer}
+  - {name: snmp.upsBatteryTemperature, oid: 1.3.6.1.2.1.33.1.2.7.0, type: gauge}

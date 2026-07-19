@@ -1,0 +1,5 @@
+id: generic-host
+description: Server or workstation exposing HOST-RESOURCES-MIB.
+include: [system, host-resources]
+match:
+  sysobjectid_prefix: "1.3.6.1.4.1.32473.3"

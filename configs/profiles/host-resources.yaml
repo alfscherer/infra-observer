@@ -1,0 +1,10 @@
+id: host-resources
+description: HOST-RESOURCES-MIB processor load plus a private memory gauge.
+metrics:
+  - name: snmp.hrProcessorLoad
+    type: gauge
+    table:
+      oid: 1.3.6.1.2.1.25.3.3.1.2
+      index_label: cpu
+  # Percent of physical memory in use.
+  - {name: snmp.memoryUsedPercent, oid: 1.3.6.1.4.1.32473.3.1.1.0, type: gauge}

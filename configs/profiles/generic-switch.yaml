@@ -1,0 +1,10 @@
+id: generic-switch
+description: Layer-2/3 switch with a vendor CPU and temperature sensor in a private (documentation) enterprise subtree.
+include: [system, interfaces]
+match:
+  sysobjectid_prefix: "1.3.6.1.4.1.32473.1.1"
+metrics:
+  # Percent, 0..100. Normalization scales it to a 0..1 utilization.
+  - {name: snmp.cpuLoadPercent, oid: 1.3.6.1.4.1.32473.1.1.1.0, type: gauge}
+  # Degrees Celsius.
+  - {name: snmp.temperatureCelsius, oid: 1.3.6.1.4.1.32473.1.1.2.0, type: gauge}

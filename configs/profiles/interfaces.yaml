@@ -1,0 +1,39 @@
+id: interfaces
+description: IF-MIB interface status and counters, labelled by ifName.
+metrics:
+  - name: snmp.ifOperStatus
+    type: integer
+    table:
+      oid: 1.3.6.1.2.1.2.2.1.8
+      index_label: ifIndex
+      labels: {ifName: 1.3.6.1.2.1.31.1.1.1.1}
+  - name: snmp.ifAdminStatus
+    type: integer
+    table:
+      oid: 1.3.6.1.2.1.2.2.1.7
+      index_label: ifIndex
+      labels: {ifName: 1.3.6.1.2.1.31.1.1.1.1}
+  - name: snmp.ifHCInOctets
+    type: counter
+    table:
+      oid: 1.3.6.1.2.1.31.1.1.1.6
+      index_label: ifIndex
+      labels: {ifName: 1.3.6.1.2.1.31.1.1.1.1}
+  - name: snmp.ifHCOutOctets
+    type: counter
+    table:
+      oid: 1.3.6.1.2.1.31.1.1.1.10
+      index_label: ifIndex
+      labels: {ifName: 1.3.6.1.2.1.31.1.1.1.1}
+  - name: snmp.ifInErrors
+    type: counter
+    table:
+      oid: 1.3.6.1.2.1.2.2.1.14
+      index_label: ifIndex
+      labels: {ifName: 1.3.6.1.2.1.31.1.1.1.1}
+  - name: snmp.ifOutErrors
+    type: counter
+    table:
+      oid: 1.3.6.1.2.1.2.2.1.20
+      index_label: ifIndex
+      labels: {ifName: 1.3.6.1.2.1.31.1.1.1.1}

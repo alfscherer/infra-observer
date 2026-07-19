@@ -1,0 +1,7 @@
+id: system
+description: RFC 3418 system group, collected for every device.
+metrics:
+  - {name: snmp.sysDescr,    oid: 1.3.6.1.2.1.1.1.0, type: string}
+  - {name: snmp.sysObjectID, oid: 1.3.6.1.2.1.1.2.0, type: string}
+  - {name: snmp.sysUpTime,   oid: 1.3.6.1.2.1.1.3.0, type: duration}
+  - {name: snmp.sysName,     oid: 1.3.6.1.2.1.1.5.0, type: string}
