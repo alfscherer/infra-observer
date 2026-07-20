@@ -255,3 +255,44 @@ func (c *Client) Consume(ctx context.Context, spec ConsumerSpec, handler Handler
 
 // String describes the connection for logs.
 func (c *Client) String() string { return fmt.Sprintf("nats(%s)", c.nc.ConnectedUrl()) }
+
+// OutMsg is one message in a batch publish.
+type OutMsg struct {
+	Subject string
+	MsgID   string
+	Payload []byte
+	Headers map[string]string
+}
+
+// PublishBatch publishes messages with pipelined (asynchronous) JetStream
+// publishes and waits until every one is acknowledged. A single poll cycle
+// yields tens of observations; round-tripping each one serially would make
+// publish latency, not the device, the bottleneck.
+func (c *Client) PublishBatch(ctx context.Context, msgs []OutMsg) error {
+	futures := make([]jetstream.PubAckFuture, 0, len(msgs))
+	for _, m := range msgs {
+		nm := &nats.Msg{Subject: m.Subject, Data: m.Payload, Header: nats.Header{}}
+		for k, v := range m.Headers {
+			nm.Header.Set(k, v)
+		}
+		opts := []jetstream.PublishOpt{}
+		if m.MsgID != "" {
+			opts = append(opts, jetstream.WithMsgID(m.MsgID))
+		}
+		f, err := c.js.PublishMsgAsync(nm, opts...)
+		if err != nil {
+			return domain.Wrap(categoryOfPublish(err), "publish "+m.Subject, err)
+		}
+		futures = append(futures, f)
+	}
+	for _, f := range futures {
+		select {
+		case <-f.Ok():
+		case err := <-f.Err():
+			return domain.Wrap(categoryOfPublish(err), "publish batch", err)
+		case <-ctx.Done():
+			return domain.Wrap(domain.CategoryTimeout, "publish batch", ctx.Err())
+		}
+	}
+	return nil
+}
