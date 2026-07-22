@@ -1,0 +1,84 @@
+# Raw (source-specific) metric -> canonical metric.
+#
+# Canonical names are lower-case dotted and are what state definitions, rules,
+# storage and the API speak. Raw metrics without a mapping pass through
+# unchanged so that a JavaScript transform (scripts/transforms) can handle
+# vendor quirks; see SCRIPTING.md.
+mappings:
+  # --- collector self-observation -------------------------------------------
+  - raw: collector.poll_success
+    metric: system.reachable
+    convert: {kind: identity}
+  - raw: collector.poll_duration_seconds
+    metric: system.poll.duration_seconds
+    unit: seconds
+
+  # --- system group ---------------------------------------------------------
+  - {raw: snmp.sysUpTime, metric: system.uptime, unit: seconds}
+  - {raw: snmp.sysName, metric: system.name}
+  - {raw: snmp.sysDescr, metric: system.description}
+  - {raw: snmp.sysObjectID, metric: system.object_id}
+
+  # --- interfaces -----------------------------------------------------------
+  - raw: snmp.ifOperStatus
+    metric: network.interface.operational
+    convert: {kind: bool, true_values: [1]}     # 1 = up; down(2), testing(3), dormant(5), ... = not operational
+    labels: {ifName: interface, ifIndex: if_index}
+  - raw: snmp.ifAdminStatus
+    metric: network.interface.admin_enabled
+    convert: {kind: bool, true_values: [1]}
+    labels: {ifName: interface, ifIndex: if_index}
+  - raw: snmp.ifHCInOctets
+    metric: network.interface.in_octets
+    unit: octets
+    labels: {ifName: interface, ifIndex: if_index}
+  - raw: snmp.ifHCOutOctets
+    metric: network.interface.out_octets
+    unit: octets
+    labels: {ifName: interface, ifIndex: if_index}
+  - raw: snmp.ifInErrors
+    metric: network.interface.in_errors
+    unit: packets
+    labels: {ifName: interface, ifIndex: if_index}
+  - raw: snmp.ifOutErrors
+    metric: network.interface.out_errors
+    unit: packets
+    labels: {ifName: interface, ifIndex: if_index}
+
+  # --- compute --------------------------------------------------------------
+  - raw: snmp.cpuLoadPercent
+    metric: system.cpu.utilization
+    unit: ratio
+    convert: {kind: scale, factor: 0.01}
+  - raw: snmp.hrProcessorLoad
+    metric: system.cpu.utilization
+    unit: ratio
+    convert: {kind: scale, factor: 0.01}
+    labels: {cpu: cpu}
+  - raw: snmp.memoryUsedPercent
+    metric: system.memory.utilization
+    unit: ratio
+    convert: {kind: scale, factor: 0.01}
+
+  # --- environment ----------------------------------------------------------
+  - raw: snmp.temperatureCelsius
+    metric: environment.temperature.celsius
+    unit: celsius
+  - raw: snmp.upsBatteryTemperature
+    metric: environment.temperature.celsius
+    unit: celsius
+
+  # --- power ----------------------------------------------------------------
+  - raw: snmp.upsOutputSource
+    metric: power.ups.on_battery
+    convert: {kind: bool, true_values: [5]}     # UPS-MIB: 5 = onBattery
+  - raw: snmp.upsBatteryStatus
+    metric: power.ups.battery_low
+    convert: {kind: bool, true_values: [3, 4]}  # batteryLow, batteryDepleted
+  - raw: snmp.upsEstimatedChargeRemaining
+    metric: power.ups.battery_charge_ratio
+    unit: ratio
+    convert: {kind: scale, factor: 0.01}
+
+  # --- wireless -------------------------------------------------------------
+  - {raw: snmp.wirelessClients, metric: wireless.clients}
