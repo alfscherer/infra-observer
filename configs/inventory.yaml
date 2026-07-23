@@ -13,6 +13,9 @@ devices:
     capabilities: [snmp, interface-admin]
     credentials_ref: snmp/lab
     collection: {protocol: snmp, profile: generic-switch, interval: 10s}
+    attributes:
+      interface.Gi0/1.description: "uplink to switch-02"
+      interface.Gi0/2.description: "lab server-01"
   - id: switch-02
     hostname: switch-02.lab.example
     management_address: simulator:16102

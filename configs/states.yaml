@@ -1,0 +1,68 @@
+# State definitions: what is tracked, how a sample is judged, and how many
+# samples it takes to change state. See PIPELINE.md, "State engine".
+#
+#   UP -> SUSPECT -> DOWN -> RECOVERING -> UP
+#
+# `alert` fires on entering DOWN, `recovery` on returning to UP. SUSPECT and
+# RECOVERING never produce events: they are the debounce zone.
+definitions:
+  - id: device-reachability
+    description: Did the last polls of the device succeed?
+    metric: system.reachable
+    good_when: {equals: true}
+    fail_after: 3
+    recover_after: 2
+    stale: true               # silence counts as a failed poll
+    alert:    {event: device.down, severity: critical, message: "{device} is unreachable"}
+    recovery: {event: device.up,   severity: info,     message: "{device} is reachable again"}
+
+  - id: interface-operational
+    metric: network.interface.operational
+    key_labels: [interface]
+    device_types: [switch, access_point, router]
+    good_when: {equals: true}
+    fail_after: 2
+    recover_after: 2
+    alert:    {event: interface.down, severity: warning, message: "{device} interface {interface} is down"}
+    recovery: {event: interface.up,   severity: info,    message: "{device} interface {interface} is up"}
+
+  - id: cpu-high
+    metric: system.cpu.utilization
+    key_labels: [cpu]
+    threshold: {breach_above: 0.90, clear_below: 0.80}   # hysteresis band
+    fail_after: 3
+    recover_after: 3
+    alert:    {event: cpu.high,   severity: warning, message: "{device} CPU at {value} (>0.90)"}
+    recovery: {event: cpu.normal, severity: info,    message: "{device} CPU back to normal ({value})"}
+
+  - id: memory-high
+    metric: system.memory.utilization
+    threshold: {breach_above: 0.92, clear_below: 0.85}
+    fail_after: 3
+    recover_after: 3
+    alert:    {event: memory.high,   severity: warning, message: "{device} memory at {value}"}
+    recovery: {event: memory.normal, severity: info,    message: "{device} memory back to normal ({value})"}
+
+  - id: temperature-high
+    metric: environment.temperature.celsius
+    threshold: {breach_above: 65, clear_below: 60}
+    fail_after: 2
+    recover_after: 2
+    alert:    {event: temperature.high,   severity: warning, message: "{device} temperature {value}C"}
+    recovery: {event: temperature.normal, severity: info,    message: "{device} temperature back to normal ({value}C)"}
+
+  - id: ups-on-battery
+    metric: power.ups.on_battery
+    good_when: {equals: false}
+    fail_after: 1             # losing mains power is reported immediately
+    recover_after: 2
+    alert:    {event: ups.on_battery, severity: critical, message: "{device} is running on battery"}
+    recovery: {event: ups.on_mains,   severity: info,     message: "{device} is back on mains power"}
+
+  - id: ups-battery-low
+    metric: power.ups.battery_low
+    good_when: {equals: false}
+    fail_after: 1
+    recover_after: 2
+    alert:    {event: ups.battery_low,    severity: critical, message: "{device} battery is low"}
+    recovery: {event: ups.battery_normal, severity: info,     message: "{device} battery is no longer low"}
