@@ -31,6 +31,8 @@ func run(args []string) error {
 		return cmdConfig(rest)
 	case "inventory":
 		return cmdInventory(rest)
+	case "migrate":
+		return cmdMigrate(rest)
 	case "help", "-h", "--help":
 		usage()
 		return nil
@@ -44,6 +46,7 @@ func usage() {
 commands:
   config validate     load and validate the configuration and inventory
   inventory list      print registered devices
+  migrate             apply pending database migrations
   version             print the build version
 
 Every command accepts --config (default $INFRA_OBSERVER_CONFIG or configs/config.yaml).`)

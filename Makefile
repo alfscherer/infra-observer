@@ -7,7 +7,7 @@ BIN     := bin/infra-observer
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: help setup build test lint fmt check clean
+.PHONY: help setup build test lint fmt check clean integration-test migrate
 
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -29,6 +29,12 @@ lint: ## gofmt + go vet (+ staticcheck when installed)
 	@out="$$(gofmt -l cmd internal)"; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 	$(GO) vet ./...
 	@if command -v staticcheck >/dev/null; then staticcheck ./...; else echo "staticcheck not installed; skipped"; fi
+
+integration-test: ## run all tests including PostgreSQL-backed ones (needs docker)
+	./hack/integration-test.sh
+
+migrate: build ## apply database migrations (needs INFRA_OBSERVER_DATABASE_URL)
+	$(BIN) migrate --config configs/config.yaml
 
 check: lint test ## everything a change must pass before commit
 
