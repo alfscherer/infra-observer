@@ -159,6 +159,44 @@ func Run(t *testing.T, newStore Factory) {
 				return nil
 			})
 		},
+		"SamplesWindow": func(t *testing.T, s persistence.Store) {
+			mk := func(id string, at time.Time, v any, dev string) domain.Observation {
+				o := obs(id)
+				o.Value, o.ObservedAt, o.DeviceID = v, at, dev
+				return o
+			}
+			_ = s.Do(ctx, func(tx persistence.Tx) error {
+				for i, v := range []any{true, false, true, false} {
+					if _, err := tx.InsertObservation(ctx, mk(string(rune('a'+i)), t0.Add(time.Duration(i)*time.Minute), v, "sw1")); err != nil {
+						return err
+					}
+				}
+				_, _ = tx.InsertObservation(ctx, mk("z", t0.Add(time.Minute), true, "other-device"))
+				o := mk("n", t0.Add(30*time.Second), 0.5, "sw1")
+				o.Metric = "other.metric"
+				_, _ = tx.InsertObservation(ctx, o)
+				return nil
+			})
+			_ = s.Do(ctx, func(tx persistence.Tx) error {
+				key := domain.LabelsKey(map[string]string{"interface": "Gi0/1"})
+				got, err := tx.Samples(ctx, "sw1", "network.interface.operational", key, t0, t0.Add(3*time.Minute))
+				if err != nil {
+					t.Fatal(err)
+				}
+				// from is exclusive, to is inclusive; other devices and metrics are excluded
+				if len(got) != 3 || !got[0].At.Equal(t0.Add(time.Minute)) || got[0].Bool == nil || *got[0].Bool != false || got[0].Num != 0 {
+					t.Fatalf("samples: %+v", got)
+				}
+				if got[1].Num != 1 || got[2].At != got[2].At {
+					t.Fatalf("ordering/values: %+v", got)
+				}
+				capped, _ := tx.Samples(ctx, "sw1", "network.interface.operational", key, t0.Add(-time.Hour), t0.Add(time.Minute))
+				if len(capped) != 2 {
+					t.Fatalf("upper bound must be inclusive and enforced: %+v", capped)
+				}
+				return nil
+			})
+		},
 		"TransitionInsertIsIdempotent": func(t *testing.T, s persistence.Store) {
 			tr := domain.Transition{TransitionID: "t1", Key: "k", DeviceID: "sw1", DefinitionID: "d", From: domain.StateUp, To: domain.StateSuspect, At: t0, ObservationID: "o", CorrelationID: "c"}
 			for i := 0; i < 2; i++ {

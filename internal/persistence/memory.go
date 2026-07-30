@@ -103,6 +103,30 @@ func (t *memTx) TouchDevice(_ context.Context, id string, at time.Time) error {
 	return nil
 }
 
+func (t *memTx) Samples(_ context.Context, deviceID, metric, labelsKey string, from, to time.Time) ([]domain.Sample, error) {
+	var out []domain.Sample
+	for _, id := range t.s.obsOrder {
+		o := t.s.observation[id]
+		if o.DeviceID != deviceID || o.Metric != metric || domain.LabelsKey(o.Labels) != labelsKey {
+			continue
+		}
+		if !o.ObservedAt.After(from) || o.ObservedAt.After(to) {
+			continue
+		}
+		f, ok := o.Float()
+		if !ok {
+			continue
+		}
+		smp := domain.Sample{At: o.ObservedAt, Num: f}
+		if b, isBool := o.Value.(bool); isBool {
+			smp.Bool = &b
+		}
+		out = append(out, smp)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
+	return out, nil
+}
+
 func (t *memTx) GetState(_ context.Context, key string) (*domain.StateRecord, error) {
 	r, ok := t.s.states[key]
 	if !ok {

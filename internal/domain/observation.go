@@ -76,3 +76,10 @@ func cloneMap(m map[string]string) map[string]string {
 	}
 	return c
 }
+
+// Sample is one stored point of a series, as read back for rule windows.
+type Sample struct {
+	At   time.Time
+	Num  float64 // numeric value; booleans read as 0/1
+	Bool *bool   // set when the stored value was boolean
+}

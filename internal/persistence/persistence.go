@@ -32,6 +32,12 @@ type Tx interface {
 	// TouchDevice advances the device's last_seen; it never moves it backwards.
 	TouchDevice(ctx context.Context, deviceID string, at time.Time) error
 
+	// Samples returns the stored numeric/boolean points of one series with
+	// from < observed_at <= to, oldest first. The upper bound makes rule
+	// evaluation depend only on data at or before the observation being
+	// processed, which keeps it deterministic under replay and reordering.
+	Samples(ctx context.Context, deviceID, metric, labelsKey string, from, to time.Time) ([]domain.Sample, error)
+
 	// GetState returns the record for key, or nil. It locks the key for the
 	// remainder of the transaction so concurrent workers serialise per entity.
 	GetState(ctx context.Context, key string) (*domain.StateRecord, error)

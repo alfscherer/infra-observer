@@ -17,6 +17,7 @@ import (
 	"github.com/alfscherer/infra-observer/internal/messaging"
 	"github.com/alfscherer/infra-observer/internal/normalize"
 	"github.com/alfscherer/infra-observer/internal/persistence"
+	"github.com/alfscherer/infra-observer/internal/rules"
 	"github.com/alfscherer/infra-observer/internal/schema"
 	"github.com/alfscherer/infra-observer/internal/state"
 )
@@ -355,5 +356,113 @@ func TestRelayPublishesOutboxAndSurvivesOutage(t *testing.T) {
 	if subjects[messaging.SubjectEventDevice] == "" || subjects[messaging.SubjectEventAlert] == "" ||
 		subjects[messaging.SubjectEventDevice] == subjects[messaging.SubjectEventAlert] {
 		t.Fatalf("both subjects need distinct msg ids for stream-level de-duplication: %v", subjects)
+	}
+}
+
+// --- rules through the pipeline ---------------------------------------------
+
+func (h *harness) withRules(t *testing.T) {
+	t.Helper()
+	rs, err := rules.LoadFile("../../configs/rules.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.p.Rules = rs
+}
+
+func TestFlappingRuleFiresOnceThroughPipelineAndClears(t *testing.T) {
+	h := newHarness(t)
+	h.withRules(t)
+	// The interface toggles every 10s: state definition raises interface.down
+	// (2 consecutive), the rule raises interface.flapping (5 transitions).
+	var flapping, down int
+	for n := 1; n <= 14; n++ {
+		out := h.process(t, ifObs(n, n%2 == 1))
+		for _, ev := range out.Events {
+			switch ev.Type {
+			case "interface.flapping":
+				flapping++
+				if ev.Labels["rule_id"] != "switch-interface-flapping" || ev.Source != "rule:switch-interface-flapping" {
+					t.Fatalf("rule event: %+v", ev)
+				}
+			case "interface.down":
+				down++
+			}
+		}
+	}
+	if flapping != 1 {
+		t.Fatalf("flapping must fire exactly once, got %d", flapping)
+	}
+	if down != 0 {
+		t.Fatalf("alternating samples never fail twice in a row, got %d interface.down", down)
+	}
+	// 11 minutes of stability: the flips age out of the window and the rule clears.
+	var cleared bool
+	for i := 0; i < 3; i++ {
+		o := ifObs(100+i, true)
+		o.ObservedAt = t0.Add(20*time.Minute + time.Duration(i)*10*time.Second)
+		for _, ev := range h.process(t, o).Events {
+			if ev.Type == "interface.stable" && ev.Resolves {
+				cleared = true
+			}
+		}
+	}
+	if !cleared {
+		t.Fatal("rule should clear once the window is stable")
+	}
+	for _, a := range h.store.Alerts() {
+		if strings.HasPrefix(a.AlertKey, "rule:") && a.Status != domain.AlertResolved {
+			t.Fatalf("rule alert should be resolved: %+v", a)
+		}
+	}
+}
+
+func TestRuleEvaluationIsIdempotentUnderRedelivery(t *testing.T) {
+	h := newHarness(t)
+	h.withRules(t)
+	var seq []domain.Observation
+	for n := 1; n <= 8; n++ {
+		seq = append(seq, ifObs(n, n%2 == 1))
+	}
+	for _, o := range seq {
+		h.process(t, o)
+	}
+	events, outbox := len(h.store.Events()), h.store.OutboxPending()
+	for round := 0; round < 3; round++ {
+		for _, o := range seq {
+			h.process(t, o)
+		}
+	}
+	if len(h.store.Events()) != events || h.store.OutboxPending() != outbox {
+		t.Fatal("replaying observations changed events or notifications")
+	}
+}
+
+func TestServerHighCPURuleUsesWindowAverage(t *testing.T) {
+	h := newHarness(t)
+	h.withRules(t)
+	cpu := func(n int, v float64) domain.Observation {
+		return domain.Observation{ObservationID: fmt.Sprintf("cpu-%d", n), CorrelationID: "c", DeviceID: "server-01", Source: "snmp",
+			Metric: "system.cpu.utilization", Value: v, ObservedAt: t0.Add(time.Duration(n) * 10 * time.Second)}
+	}
+	var fired []domain.Event
+	for n := 1; n <= 8; n++ {
+		out := h.process(t, cpu(n, 0.97))
+		for _, ev := range out.Events {
+			if ev.Type == "cpu.sustained_high" {
+				fired = append(fired, ev)
+			}
+		}
+	}
+	if len(fired) != 1 {
+		t.Fatalf("expected one cpu.sustained_high after the window filled (min_samples=5), got %d", len(fired))
+	}
+	// a switch is not covered by the server rule
+	sw := cpu(1, 0.99)
+	sw.ObservationID, sw.DeviceID = "sw-cpu", "switch-01"
+	for _, ev := range h.process(t, sw).Events {
+		if ev.Type == "cpu.sustained_high" {
+			t.Fatal("rule matched the wrong device type")
+		}
 	}
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/alfscherer/infra-observer/internal/messaging"
 	"github.com/alfscherer/infra-observer/internal/normalize"
 	"github.com/alfscherer/infra-observer/internal/persistence"
+	"github.com/alfscherer/infra-observer/internal/rules"
 	"github.com/alfscherer/infra-observer/internal/schema"
 	"github.com/alfscherer/infra-observer/internal/state"
 )
@@ -36,6 +37,7 @@ type Processor struct {
 	Normalizer *normalize.Normalizer
 	Enricher   enrich.Enricher
 	States     *state.Definitions
+	Rules      *rules.Rules // optional
 	Store      persistence.Store
 	Log        *slog.Logger
 	Now        func() time.Time
@@ -131,16 +133,10 @@ func (p *Processor) Process(ctx context.Context, o domain.Observation) (Outcome,
 				return err
 			}
 		}
-		for _, def := range defs {
-			key, _ := state.KeyFor(def, enriched.DeviceID, enriched.Labels)
-			prev, err := tx.GetState(ctx, key)
-			if err != nil {
-				return err
-			}
-			up := state.Evaluate(def, prev, enriched)
+		apply := func(up state.Update) error {
 			if up.Ignored != state.NotIgnored {
 				out.Ignored++
-				continue
+				return nil
 			}
 			if err := tx.PutState(ctx, up.Record); err != nil {
 				return err
@@ -156,6 +152,36 @@ func (p *Processor) Process(ctx context.Context, o domain.Observation) (Outcome,
 					return err
 				}
 				out.Events = append(out.Events, ev)
+			}
+			return nil
+		}
+		for _, def := range defs {
+			key, _ := state.KeyFor(def, enriched.DeviceID, enriched.Labels)
+			prev, err := tx.GetState(ctx, key)
+			if err != nil {
+				return err
+			}
+			if err := apply(state.Evaluate(def, prev, enriched)); err != nil {
+				return err
+			}
+		}
+		for _, rule := range p.Rules.For(enriched.Metric, dev) {
+			key, _ := rules.KeyFor(rule, enriched.DeviceID, enriched.Labels)
+			prev, err := tx.GetState(ctx, key)
+			if err != nil {
+				return err
+			}
+			if prev != nil && (prev.LastObservationID == enriched.ObservationID || !enriched.ObservedAt.After(prev.LastObservedAt)) {
+				out.Ignored++ // duplicate or out of order: skip the window query entirely
+				continue
+			}
+			samples, err := tx.Samples(ctx, enriched.DeviceID, enriched.Metric, domain.LabelsKey(enriched.Labels),
+				enriched.ObservedAt.Add(-rule.Window()), enriched.ObservedAt)
+			if err != nil {
+				return err
+			}
+			if err := apply(rules.Evaluate(rule, prev, samples, enriched)); err != nil {
+				return err
 			}
 		}
 		return nil

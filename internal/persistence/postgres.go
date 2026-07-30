@@ -183,6 +183,27 @@ func (t *pgTx) TouchDevice(ctx context.Context, id string, at time.Time) error {
 	return err
 }
 
+func (t *pgTx) Samples(ctx context.Context, deviceID, metric, labelsKey string, from, to time.Time) ([]domain.Sample, error) {
+	rows, err := t.tx.Query(ctx, `
+		SELECT observed_at, value_num, value_bool FROM observations
+		WHERE device_id = $1 AND metric = $2 AND labels_key = $3 AND observed_at > $4 AND observed_at <= $5
+		  AND value_num IS NOT NULL
+		ORDER BY observed_at`, deviceID, metric, labelsKey, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Sample
+	for rows.Next() {
+		var s domain.Sample
+		if err := rows.Scan(&s.At, &s.Num, &s.Bool); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 func (t *pgTx) GetState(ctx context.Context, key string) (*domain.StateRecord, error) {
 	// The advisory lock serialises workers on this key even when the row does
 	// not exist yet, which FOR UPDATE alone cannot do.

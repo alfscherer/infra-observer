@@ -1,0 +1,57 @@
+# Monitoring rules: windowed conditions over a metric series. A rule fires once
+# when its condition becomes true and clears once when it stops being true.
+# See PIPELINE.md, "Rules".
+rules:
+  - id: switch-interface-flapping
+    description: An interface changing status repeatedly is worse than one that is simply down.
+    match:
+      device_type: switch
+      metric: network.interface.operational
+    condition:
+      transitions: 5
+      within: 10m
+    severity: warning
+    event: interface.flapping
+    clear_event: interface.stable
+    message: "{device} interface {interface} changed status {value} times in 10m"
+
+  - id: server-high-cpu
+    description: Sustained CPU pressure, judged over a window rather than consecutive samples.
+    match:
+      device_type: [server, workstation]
+      metric: system.cpu.utilization
+    condition:
+      average_over: 5m
+      greater_than: 0.90
+      min_samples: 5
+    severity: warning
+    event: cpu.sustained_high
+    clear_event: cpu.sustained_normal
+    message: "{device} average CPU {value} over 5m"
+
+  - id: temperature-critical
+    description: Any reading above 75C in the last 5 minutes.
+    match:
+      metric: environment.temperature.celsius
+    condition:
+      max_over: 5m
+      greater_than: 75
+      min_samples: 1
+    severity: critical
+    event: temperature.critical
+    clear_event: temperature.recovered
+    message: "{device} peaked at {value}C in the last 5m"
+
+  - id: ups-battery-draining
+    description: Battery charge averaging below 30%.
+    match:
+      device_type: ups
+      metric: power.ups.battery_charge_ratio
+    condition:
+      average_over: 2m
+      less_than: 0.30
+      min_samples: 3
+    severity: critical
+    event: ups.battery_draining
+    clear_event: ups.battery_recovered
+    message: "{device} battery charge averaging {value}"
