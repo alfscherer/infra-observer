@@ -33,6 +33,12 @@ func run(args []string) error {
 		return cmdInventory(rest)
 	case "migrate":
 		return cmdMigrate(rest)
+	case "collector":
+		return cmdCollector(rest)
+	case "simulator":
+		return cmdSimulator(rest)
+	case "scenario":
+		return cmdScenario(rest)
 	case "help", "-h", "--help":
 		usage()
 		return nil
@@ -47,6 +53,9 @@ commands:
   config validate     load and validate the configuration and inventory
   inventory list      print registered devices
   migrate             apply pending database migrations
+  collector           poll devices and publish raw observations
+  simulator           run the simulated lab (SNMP agents + scenario control)
+  scenario            apply a scenario to the running simulator
   version             print the build version
 
 Every command accepts --config (default $INFRA_OBSERVER_CONFIG or configs/config.yaml).`)

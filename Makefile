@@ -7,7 +7,7 @@ BIN     := bin/infra-observer
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: help setup build test lint fmt check clean integration-test migrate
+.PHONY: help setup build test lint fmt check clean integration-test migrate scenario
 
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -44,3 +44,7 @@ clean:
 .PHONY: validate-config
 validate-config: build ## validate configuration and inventory
 	$(BIN) config validate --config configs/config.yaml
+
+# make scenario DEVICE=switch-01 EVENT=interface-flap [ARGS="--arg interface=Gi0/2 --duration 5m"]
+scenario: build ## apply a simulator scenario: DEVICE=... EVENT=... [ARGS=...]
+	$(BIN) scenario --config configs/config.yaml --device "$(DEVICE)" --event "$(EVENT)" $(ARGS)
