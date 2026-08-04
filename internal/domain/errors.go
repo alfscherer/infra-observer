@@ -60,6 +60,10 @@ func Errorf(cat Category, format string, args ...any) error {
 	return &Error{Category: cat, Err: fmt.Errorf(format, args...)}
 }
 
+// Categorized lets other packages' error types report a category without
+// importing this package's Error type.
+type Categorized interface{ Category() Category }
+
 // CategoryOf returns the category of err. Untyped errors are treated as
 // permanent unless they are context errors: an unknown failure is not assumed
 // to heal by itself, which keeps poison messages from looping.
@@ -70,6 +74,10 @@ func CategoryOf(err error) Category {
 	var de *Error
 	if errors.As(err, &de) {
 		return de.Category
+	}
+	var ce Categorized
+	if errors.As(err, &ce) {
+		return ce.Category()
 	}
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
