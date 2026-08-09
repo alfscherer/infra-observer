@@ -67,6 +67,10 @@ type Store interface {
 	UpsertDevices(ctx context.Context, devices []domain.Device) error
 	// ListDevices returns mirrored devices including last_seen, ordered by id.
 	ListDevices(ctx context.Context) ([]domain.Device, error)
+	// Latest returns the most recent stored observation of a series, or nil.
+	// A nil labels map matches any label set; a non-nil map (even empty) must
+	// match the series' labels exactly.
+	Latest(ctx context.Context, deviceID, metric string, labels map[string]string) (*domain.Observation, error)
 	// ListStates returns every current state record (used by the stale sweeper).
 	ListStates(ctx context.Context) ([]domain.StateRecord, error)
 

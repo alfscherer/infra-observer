@@ -197,6 +197,38 @@ func Run(t *testing.T, newStore Factory) {
 				return nil
 			})
 		},
+		"LatestObservation": func(t *testing.T, s persistence.Store) {
+			put := func(id string, at time.Time, v any, labels map[string]string) {
+				o := obs(id)
+				o.ObservedAt, o.Value, o.Labels = at, v, labels
+				_ = s.Do(ctx, func(tx persistence.Tx) error { _, err := tx.InsertObservation(ctx, o); return err })
+			}
+			g1, g2 := map[string]string{"interface": "Gi0/1"}, map[string]string{"interface": "Gi0/2"}
+			put("a", t0, true, g1)
+			put("b", t0.Add(time.Minute), false, g1)
+			put("c", t0.Add(2*time.Minute), true, g2)
+			got, err := s.Latest(ctx, "sw1", "network.interface.operational", g1)
+			if err != nil || got == nil || got.ObservationID != "b" || got.Value != false || got.Labels["interface"] != "Gi0/1" || !got.ObservedAt.Equal(t0.Add(time.Minute)) {
+				t.Fatalf("labelled latest: %+v %v", got, err)
+			}
+			any, _ := s.Latest(ctx, "sw1", "network.interface.operational", nil)
+			if any == nil || any.ObservationID != "c" {
+				t.Fatalf("nil labels match any series: %+v", any)
+			}
+			if none, _ := s.Latest(ctx, "sw1", "network.interface.operational", map[string]string{}); none != nil {
+				t.Fatalf("empty (non-nil) labels means the unlabelled series: %+v", none)
+			}
+			if none, _ := s.Latest(ctx, "sw1", "no.such.metric", nil); none != nil {
+				t.Fatal("unknown metric")
+			}
+			put("n", t0, 42.5, map[string]string{})
+			o := obs("s")
+			o.Metric, o.Value, o.Labels = "system.name", "switch-01", nil
+			_ = s.Do(ctx, func(tx persistence.Tx) error { _, err := tx.InsertObservation(ctx, o); return err })
+			if n, _ := s.Latest(ctx, "sw1", "system.name", nil); n == nil || n.Value != "switch-01" {
+				t.Fatalf("string value: %+v", n)
+			}
+		},
 		"TransitionInsertIsIdempotent": func(t *testing.T, s persistence.Store) {
 			tr := domain.Transition{TransitionID: "t1", Key: "k", DeviceID: "sw1", DefinitionID: "d", From: domain.StateUp, To: domain.StateSuspect, At: t0, ObservationID: "o", CorrelationID: "c"}
 			for i := 0; i < 2; i++ {

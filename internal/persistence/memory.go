@@ -233,6 +233,26 @@ func (s *MemStore) ListDevices(_ context.Context) ([]domain.Device, error) {
 	return out, nil
 }
 
+func (s *MemStore) Latest(_ context.Context, deviceID, metric string, labels map[string]string) (*domain.Observation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var best *domain.Observation
+	for _, id := range s.obsOrder {
+		o := s.observation[id]
+		if o.DeviceID != deviceID || o.Metric != metric {
+			continue
+		}
+		if labels != nil && domain.LabelsKey(o.Labels) != domain.LabelsKey(labels) {
+			continue
+		}
+		if best == nil || o.ObservedAt.After(best.ObservedAt) {
+			c := o.Clone()
+			best = &c
+		}
+	}
+	return best, nil
+}
+
 func (s *MemStore) ListStates(_ context.Context) ([]domain.StateRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

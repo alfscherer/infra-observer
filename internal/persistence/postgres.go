@@ -382,6 +382,45 @@ func (s *PGStore) ListDevices(ctx context.Context) ([]domain.Device, error) {
 	return out, nil
 }
 
+func (s *PGStore) Latest(ctx context.Context, deviceID, metric string, labels map[string]string) (*domain.Observation, error) {
+	q := `SELECT observation_id, correlation_id, source, value_num, value_bool, value_text, labels, observed_at, received_at, metadata
+	      FROM observations WHERE device_id = $1 AND metric = $2`
+	args := []any{deviceID, metric}
+	if labels != nil {
+		q += ` AND labels_key = $3`
+		args = append(args, domain.LabelsKey(labels))
+	}
+	q += ` ORDER BY observed_at DESC LIMIT 1`
+	var (
+		o         = domain.Observation{DeviceID: deviceID, Metric: metric}
+		num       *float64
+		bl        *bool
+		txt       *string
+		lbl, meta []byte
+		received  *time.Time
+	)
+	err := s.pool.QueryRow(ctx, q, args...).Scan(&o.ObservationID, &o.CorrelationID, &o.Source, &num, &bl, &txt, &lbl, &o.ObservedAt, &received, &meta)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, s.fail("latest observation", err)
+	}
+	switch {
+	case bl != nil:
+		o.Value = *bl
+	case txt != nil:
+		o.Value = *txt
+	case num != nil:
+		o.Value = *num
+	}
+	o.Labels, o.Metadata = decodeLabels(lbl), decodeLabels(meta)
+	if received != nil {
+		o.ReceivedAt = *received
+	}
+	return &o, nil
+}
+
 func (s *PGStore) ListStates(ctx context.Context) ([]domain.StateRecord, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT key, device_id, definition_id, labels, state, failures, successes, breached, bad_since, good_since,
