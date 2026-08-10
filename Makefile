@@ -7,7 +7,7 @@ BIN     := bin/infra-observer
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: help setup build test lint fmt check clean integration-test migrate scenario
+.PHONY: help setup build test lint fmt check clean integration-test migrate scenario test-scripts validate-scripts
 
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -36,7 +36,13 @@ integration-test: ## run all tests including PostgreSQL-backed ones (needs docke
 migrate: build ## apply database migrations (needs INFRA_OBSERVER_DATABASE_URL)
 	$(BIN) migrate --config configs/config.yaml
 
-check: lint test ## everything a change must pass before commit
+test-scripts: build ## run every JavaScript extension against its fixtures
+	$(BIN) script test-all --config configs/config.yaml
+
+validate-scripts: build ## load all scripts as a service would; fail if any is broken
+	$(BIN) script validate --config configs/config.yaml
+
+check: lint test test-scripts ## everything a change must pass before commit
 
 clean:
 	rm -rf bin dist

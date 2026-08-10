@@ -63,7 +63,7 @@ func setup(t *testing.T, files map[string]string, settings map[string]map[string
 	for name, src := range files { // name is kind/id
 		p := filepath.Join(dir, name+".js")
 		_ = os.MkdirAll(filepath.Dir(p), 0o755)
-		if err := os.WriteFile(p, []byte("export const meta = {version: \"1\", description: \"t\"}\n"+src), 0o644); err != nil {
+		if err := os.WriteFile(p, []byte("export const meta = {version: \"1\", description: \"t\", metrics: [\"*\"]}\n"+src), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -205,7 +205,7 @@ export function transform(o) {
 func TestHostAPIIsUnavailableDuringLoad(t *testing.T) {
 	dir := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(dir, "transforms"), 0o755)
-	_ = os.WriteFile(filepath.Join(dir, "transforms", "eager.js"), []byte(`export const meta = {version: "1"}
+	_ = os.WriteFile(filepath.Join(dir, "transforms", "eager.js"), []byte(`export const meta = {version: "1", metrics: ["*"]}
 const d = device.get("switch-01")
 export function transform(o) { return o }`), 0o644)
 	cfg := config.Default().Scripting

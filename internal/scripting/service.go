@@ -76,17 +76,28 @@ func (s *Service) Reload() registry.Report {
 			continue
 		}
 		var meta struct {
-			Version     string `json:"version"`
-			Description string `json:"description"`
+			Version     string   `json:"version"`
+			Description string   `json:"description"`
+			Metrics     []string `json:"metrics"`
 		}
-		if json.Unmarshal(raw, &meta) != nil || meta.Version == "" {
-			s.Registry.MarkFailed(sc.Key, "meta.version is required")
+		problem := ""
+		switch {
+		case json.Unmarshal(raw, &meta) != nil || meta.Version == "":
+			problem = "meta.version is required"
+		case sc.Kind == registry.KindTransform && len(meta.Metrics) == 0:
+			// Transforms run for every matching observation. Making the metric
+			// filter mandatory keeps "call JavaScript for everything" from ever
+			// being the default.
+			problem = "transform scripts must declare meta.metrics (metric names, or prefixes ending in *)"
+		}
+		if problem != "" {
+			s.Registry.MarkFailed(sc.Key, problem)
 			rep.Failed++
 			rep.Loaded--
-			rep.Errors = append(rep.Errors, sc.Key+": meta.version is required")
+			rep.Errors = append(rep.Errors, sc.Key+": "+problem)
 			continue
 		}
-		s.Registry.SetMeta(sc.Key, meta.Version, meta.Description)
+		s.Registry.SetMeta(sc.Key, meta.Version, meta.Description, meta.Metrics)
 	}
 	sort.Strings(rep.Errors)
 	for _, e := range rep.Errors {

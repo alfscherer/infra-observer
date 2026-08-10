@@ -30,7 +30,7 @@ func writeScript(t *testing.T, dir, kind, name, src string) string {
 }
 
 func script(fn, body string) string {
-	return "export const meta = {version: \"1.0.0\", description: \"test\"}\nexport function " + fn + "(x) {\n" + body + "\n}\n"
+	return "export const meta = {version: \"1.0.0\", description: \"test\", metrics: [\"*\"]}\nexport function " + fn + "(x) {\n" + body + "\n}\n"
 }
 
 func newService(t *testing.T, dir string, settings map[string]map[string]config.ScriptSettings) (*Service, registry.Report) {
@@ -50,8 +50,8 @@ func TestDiscoveryValidationAndIsolationOfBrokenScripts(t *testing.T) {
 	writeScript(t, dir, "transforms", "wrong-contract", script("enrich", "return x"))
 	writeScript(t, dir, "transforms", "no-meta", "export function transform(x) { return x }\n")
 	writeScript(t, dir, "transforms", "bad-version", "export const meta = {}\nexport function transform(x) { return x }\n")
-	writeScript(t, dir, "transforms", "throws-at-load", "export const meta = {version: \"1\"}\nthrow new Error(\"nope\")\nexport function transform(x) { return x }\n")
-	writeScript(t, dir, "transforms", "spins-at-load", "export const meta = {version: \"1\"}\nfor(;;){}\nexport function transform(x) { return x }\n")
+	writeScript(t, dir, "transforms", "throws-at-load", "export const meta = {version: \"1\", metrics: [\"*\"]}\nthrow new Error(\"nope\")\nexport function transform(x) { return x }\n")
+	writeScript(t, dir, "transforms", "spins-at-load", "export const meta = {version: \"1\", metrics: [\"*\"]}\nfor(;;){}\nexport function transform(x) { return x }\n")
 	writeScript(t, dir, "enrichers", "e1", script("enrich", "return x"))
 	writeScript(t, dir, "unknown-kind", "x", script("transform", "return x"))
 	off := false

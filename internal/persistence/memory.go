@@ -351,3 +351,11 @@ func (s *MemStore) Device(id string) (domain.Device, bool) {
 	d, ok := s.devices[id]
 	return d, ok
 }
+
+// Observation returns a stored observation by id.
+func (s *MemStore) Observation(id string) (domain.Observation, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o, ok := s.observation[id]
+	return o, ok
+}

@@ -1,0 +1,20 @@
+{
+  "description": "vendor CPU percent becomes a canonical 0..1 ratio; other metrics are not this script's business",
+  "cases": [
+    {
+      "name": "converts percent to ratio and records provenance",
+      "input": {"observation_id": "o1", "correlation_id": "c1", "device_id": "ap-01", "source": "snmp", "metric": "vendor.cpu.load", "value": 40, "observed_at": "2026-08-01T12:00:00Z", "metadata": {"profile": "vendor-ap"}},
+      "expect": {"observation_id": "o1", "correlation_id": "c1", "device_id": "ap-01", "source": "snmp", "metric": "system.cpu.utilization", "value": 0.4, "observed_at": "2026-08-01T12:00:00Z", "metadata": {"profile": "vendor-ap", "raw_metric": "vendor.cpu.load", "unit": "ratio"}}
+    },
+    {
+      "name": "clamps firmware over-reporting to 1.0",
+      "input": {"observation_id": "o2", "correlation_id": "c1", "device_id": "ap-01", "source": "snmp", "metric": "vendor.cpu.load", "value": 104, "observed_at": "2026-08-01T12:00:00Z"},
+      "expect_subset": {"metric": "system.cpu.utilization", "value": 1}
+    },
+    {
+      "name": "drops a reading it cannot interpret",
+      "input": {"observation_id": "o3", "correlation_id": "c1", "device_id": "ap-01", "source": "snmp", "metric": "vendor.cpu.load", "value": "n/a", "observed_at": "2026-08-01T12:00:00Z"},
+      "expect": null
+    }
+  ]
+}

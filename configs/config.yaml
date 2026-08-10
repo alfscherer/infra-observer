@@ -67,6 +67,14 @@ scripts:
   transforms:
     normalize-cpu:
       enabled: true
+    normalize-temperature:
+      enabled: true
+      config:
+        min_celsius: -40
+        max_celsius: 125
+  enrichers:
+    classify-interface:
+      enabled: true
   integrations:
     webhook:
       enabled: true

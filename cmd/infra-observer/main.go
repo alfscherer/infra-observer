@@ -39,6 +39,8 @@ func run(args []string) error {
 		return cmdSimulator(rest)
 	case "scenario":
 		return cmdScenario(rest)
+	case "script":
+		return cmdScript(rest)
 	case "help", "-h", "--help":
 		usage()
 		return nil
@@ -56,6 +58,7 @@ commands:
   collector           poll devices and publish raw observations
   simulator           run the simulated lab (SNMP agents + scenario control)
   scenario            apply a scenario to the running simulator
+  script test|test-all|validate|list   develop and check JavaScript extensions
   version             print the build version
 
 Every command accepts --config (default $INFRA_OBSERVER_CONFIG or configs/config.yaml).`)

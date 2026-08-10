@@ -30,6 +30,15 @@ import (
 	"github.com/alfscherer/infra-observer/internal/state"
 )
 
+// Extensions are the optional script hooks. Implementations must isolate
+// script failures themselves (a broken script leaves the observation
+// unchanged) and return an error only for platform conditions, which are
+// retried.
+type Extensions interface {
+	Transform(ctx context.Context, o domain.Observation) (domain.Observation, bool, error)
+	Enrich(ctx context.Context, o domain.Observation, dev domain.Device) (domain.Observation, error)
+}
+
 // Processor holds the stage components. Zero values of the optional fields
 // disable the corresponding behaviour.
 type Processor struct {
@@ -38,6 +47,7 @@ type Processor struct {
 	Enricher   enrich.Enricher
 	States     *state.Definitions
 	Rules      *rules.Rules // optional
+	Ext        Extensions   // optional: JavaScript transforms and enrichers
 	Store      persistence.Store
 	Log        *slog.Logger
 	Now        func() time.Time
@@ -67,12 +77,13 @@ type Normalized struct {
 	Observation domain.Observation
 	Payload     []byte
 	Mapped      bool
+	Dropped     bool // a transform script dropped the observation on purpose
 }
 
 // NormalizeMessage is stage A: strict decode, validation, normalization and a
 // final validation of the result. Any error here is a validation error: the
 // message is poison and must be dead-lettered, not retried.
-func (p *Processor) NormalizeMessage(_ context.Context, data []byte) (Normalized, error) {
+func (p *Processor) NormalizeMessage(ctx context.Context, data []byte) (Normalized, error) {
 	obs, err := p.Validator.DecodeObservation(data)
 	if err != nil {
 		return Normalized{}, err
@@ -83,6 +94,16 @@ func (p *Processor) NormalizeMessage(_ context.Context, data []byte) (Normalized
 	norm, res, err := p.Normalizer.Normalize(obs)
 	if err != nil {
 		return Normalized{}, err
+	}
+	if p.Ext != nil {
+		next, keep, err := p.Ext.Transform(ctx, norm)
+		if err != nil {
+			return Normalized{}, err
+		}
+		if !keep {
+			return Normalized{Observation: norm, Dropped: true}, nil
+		}
+		norm = next
 	}
 	if err := p.Validator.Validate(norm); err != nil {
 		return Normalized{}, err
@@ -114,6 +135,11 @@ func (p *Processor) Process(ctx context.Context, o domain.Observation) (Outcome,
 		return Outcome{Dropped: "device_disabled"}, nil
 	case err != nil:
 		return Outcome{}, err
+	}
+	if p.Ext != nil {
+		if enriched, err = p.Ext.Enrich(ctx, enriched, dev); err != nil {
+			return Outcome{}, err
+		}
 	}
 	defs := p.States.For(enriched.Metric, dev.DeviceType)
 

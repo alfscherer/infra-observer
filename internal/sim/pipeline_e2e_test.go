@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/alfscherer/infra-observer/internal/collector"
+	"github.com/alfscherer/infra-observer/internal/config"
 	"github.com/alfscherer/infra-observer/internal/domain"
 	"github.com/alfscherer/infra-observer/internal/enrich"
 	"github.com/alfscherer/infra-observer/internal/inventory"
@@ -17,6 +18,9 @@ import (
 	"github.com/alfscherer/infra-observer/internal/pipeline"
 	"github.com/alfscherer/infra-observer/internal/rules"
 	"github.com/alfscherer/infra-observer/internal/schema"
+	"github.com/alfscherer/infra-observer/internal/scripting"
+	"github.com/alfscherer/infra-observer/internal/scripting/api"
+	"github.com/alfscherer/infra-observer/internal/scripting/runtime"
 	"github.com/alfscherer/infra-observer/internal/state"
 )
 
@@ -74,6 +78,18 @@ func TestSimulatedScenariosExerciseTheRealPipeline(t *testing.T) {
 		Validator: schema.NewValidator(), Normalizer: norm, Enricher: enrich.Enricher{Inventory: inventory.NewRegistry(devs)},
 		States: defs, Rules: rs, Store: store, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
+	// The shipped JavaScript extensions are part of the pipeline under test.
+	cfg, err := config.Load("../../configs/config.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Scripting.Directories = []string{"../../scripts"}
+	svc, rep := scripting.New(cfg.Scripting, cfg.Scripts, []runtime.Installer{api.Installer(api.Deps{Inventory: inventory.NewRegistry(devs)})}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer svc.Close()
+	if rep.Failed != 0 {
+		t.Fatalf("scripts: %v", rep.Errors)
+	}
+	proc.Ext = &scripting.Extensions{Svc: svc, Validator: proc.Validator}
 	sched := &collector.Scheduler{
 		Devices: func() []domain.Device { return devs }, Poller: realPoller(t), Sink: pipeSink{t: t, p: proc},
 		Workers: 6, DefaultInterval: time.Second, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -139,6 +155,16 @@ func TestSimulatedScenariosExerciseTheRealPipeline(t *testing.T) {
 	waitFor("cpu.high", hasEvent("server-01", "cpu.high"))
 	waitFor("cpu.sustained_high (rule)", hasEvent("server-01", "cpu.sustained_high"))
 	_, _ = w.Apply(Scenario{Device: "server-01", Event: "cpu-normal"})
+
+	// 3b. The AP reports vendor.cpu.load and tenths-of-a-degree temperature, which
+	// no Go mapping understands. Only the JavaScript transforms turn them into
+	// canonical metrics, so these events prove scripts run in the real pipeline.
+	_, _ = w.Apply(Scenario{Device: "ap-01", Event: "high-cpu"})
+	waitFor("cpu.high on the AP (via script)", hasEvent("ap-01", "cpu.high"))
+	_, _ = w.Apply(Scenario{Device: "ap-01", Event: "cpu-normal"})
+	_, _ = w.Apply(Scenario{Device: "ap-01", Event: "overheat"})
+	waitFor("temperature.high on the AP (via script)", hasEvent("ap-01", "temperature.high"))
+	_, _ = w.Apply(Scenario{Device: "ap-01", Event: "cool"})
 
 	// 4. UPS loses mains -> critical event on the first sample.
 	_, _ = w.Apply(Scenario{Device: "ups-01", Event: "power-loss"})

@@ -58,6 +58,7 @@ type Script struct {
 	Path        string
 	Version     string
 	Description string
+	Metrics     []string // metric names (or prefix*) the script handles; Go filters before calling JS
 	Hash        string
 	Status      Status
 	Reason      string // why it is not active
@@ -232,11 +233,11 @@ func (r *Registry) MarkFailed(key, reason string) {
 
 // SetMeta records metadata read from a loaded script (called by the service
 // after it evaluates `meta` in a scratch interpreter).
-func (r *Registry) SetMeta(key, version, description string) {
+func (r *Registry) SetMeta(key, version, description string, metrics []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if s, ok := r.scripts[key]; ok {
-		s.Version, s.Description = version, description
+		s.Version, s.Description, s.Metrics = version, description, metrics
 	}
 }
 

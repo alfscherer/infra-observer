@@ -1,0 +1,22 @@
+{
+  "description": "tenths of a degree become Celsius; implausible readings are treated as sensor faults",
+  "config": {"min_celsius": -40, "max_celsius": 125},
+  "cases": [
+    {
+      "name": "converts tenths to celsius",
+      "input": {"observation_id": "o1", "correlation_id": "c1", "device_id": "ap-01", "source": "snmp", "metric": "vendor.temperature.decic", "value": 823, "observed_at": "2026-08-01T12:00:00Z"},
+      "expect_subset": {"metric": "environment.temperature.celsius", "value": 82.3, "metadata": {"unit": "celsius", "raw_metric": "vendor.temperature.decic"}}
+    },
+    {
+      "name": "rejects an implausible reading",
+      "input": {"observation_id": "o2", "correlation_id": "c1", "device_id": "ap-01", "source": "snmp", "metric": "vendor.temperature.decic", "value": 9999, "observed_at": "2026-08-01T12:00:00Z"},
+      "expect": null
+    },
+    {
+      "name": "range comes from configuration, not source code",
+      "config": {"max_celsius": 60},
+      "input": {"observation_id": "o3", "correlation_id": "c1", "device_id": "ap-01", "source": "snmp", "metric": "vendor.temperature.decic", "value": 823, "observed_at": "2026-08-01T12:00:00Z"},
+      "expect": null
+    }
+  ]
+}

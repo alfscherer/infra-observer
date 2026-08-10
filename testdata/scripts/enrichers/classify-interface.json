@@ -1,0 +1,29 @@
+{
+  "description": "interface roles from naming conventions, device type and operator descriptions",
+  "cases": [
+    {
+      "name": "gigabit port on a switch is ethernet",
+      "device": "switch-02",
+      "input": {"observation_id": "o1", "correlation_id": "c1", "device_id": "switch-02", "source": "snmp", "metric": "network.interface.operational", "value": true, "labels": {"interface": "Gi0/3"}, "observed_at": "2026-08-01T12:00:00Z", "metadata": {"site": "lab"}},
+      "expect_subset": {"metadata": {"interface_role": "ethernet", "site": "lab"}, "labels": {"interface": "Gi0/3"}, "value": true}
+    },
+    {
+      "name": "operator description marks an uplink",
+      "device": "switch-01",
+      "input": {"observation_id": "o2", "correlation_id": "c1", "device_id": "switch-01", "source": "snmp", "metric": "network.interface.operational", "value": true, "labels": {"interface": "Gi0/1"}, "observed_at": "2026-08-01T12:00:00Z", "metadata": {"interface_description": "uplink to switch-02"}},
+      "expect_subset": {"metadata": {"interface_role": "uplink"}}
+    },
+    {
+      "name": "wireless interface on an access point is a radio",
+      "device": "ap-01",
+      "input": {"observation_id": "o3", "correlation_id": "c1", "device_id": "ap-01", "source": "snmp", "metric": "network.interface.operational", "value": true, "labels": {"interface": "wlan0"}, "observed_at": "2026-08-01T12:00:00Z"},
+      "expect_subset": {"metadata": {"interface_role": "radio"}}
+    },
+    {
+      "name": "observations without an interface label are returned untouched",
+      "device": "switch-01",
+      "input": {"observation_id": "o4", "correlation_id": "c1", "device_id": "switch-01", "source": "snmp", "metric": "network.interface.operational", "value": true, "observed_at": "2026-08-01T12:00:00Z"},
+      "expect": "unchanged"
+    }
+  ]
+}
