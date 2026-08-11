@@ -1,0 +1,91 @@
+# Automation policies. Read AUTOMATION.md before changing anything here.
+#
+# Every policy is dry-run unless BOTH `automation.default_dry_run: false` in
+# config.yaml AND `safety.dry_run: false` on the policy say otherwise, and live
+# mutation additionally requires the device to be on the allowlist below.
+allowlist:
+  devices: [switch-01, ap-01, server-01, workstation-01]
+
+maintenance_windows:
+  - id: weekly-patch-window
+    match: {tags: [patch-window]}
+    recurring: {days: [sun], start: "02:00", end: "04:00", timezone: UTC}
+
+policies:
+  # The spec's example, wired to an event this platform actually emits.
+  - id: restart-stale-agent
+    description: A server or workstation that has been unreachable for 10 minutes gets its management agent restarted.
+    trigger:
+      event: device.down
+      device_type: [server, workstation]
+    conditions:
+      duration: 10m          # the alert must still be firing 10 minutes after it opened
+      retries_below: 2       # at most 2 attempts per alert
+    action:
+      type: restart_service
+      service: observer-agent
+    safety:
+      dry_run: true
+      cooldown: 30m
+      require_tag: automation-enabled
+
+  # A script proposes the remediation; Go decides whether it is allowed.
+  - id: remediate-interface-down
+    description: A lab interface that stays down is bounced (proposal by scripts/automation/interface-remediation.js).
+    trigger:
+      event: interface.down
+      device_type: switch
+    conditions:
+      duration: 2m
+      retries_below: 2
+    proposal:
+      script: interface-remediation
+      allowed_actions: [bounce_interface, enable_interface]
+    safety:
+      dry_run: true
+      cooldown: 30m
+      require_tag: automation-enabled
+
+  # Read-only and safe: gather evidence while the problem is happening.
+  - id: diagnose-sustained-cpu
+    description: Collect diagnostics from a host whose CPU has been high for the whole averaging window.
+    trigger:
+      event: cpu.sustained_high
+      device_type: [server, workstation]
+    action:
+      type: collect_diagnostics
+    safety:
+      dry_run: true
+      cooldown: 15m
+
+  # A human in the loop for the riskier restart.
+  - id: restart-ap-after-approval
+    description: An access point that stays down gets a service restart, but only when an operator approves.
+    trigger:
+      event: device.down
+      device_type: access_point
+    conditions:
+      duration: 5m
+    action:
+      type: restart_ap_service
+      service: wifi-radio
+    safety:
+      dry_run: true
+      cooldown: 1h
+      require_approval: true
+      approval_timeout: 30m
+      require_tag: automation-enabled
+
+  - id: notify-critical
+    description: Post critical events to the alerts webhook.
+    trigger:
+      event: ups.on_battery
+      min_severity: critical
+    action:
+      type: send_webhook
+      endpoint: alerts-webhook
+      message: "{device} is on battery power"
+    safety:
+      dry_run: true
+      cooldown: 10m
+      require_tag: power

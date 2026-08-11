@@ -37,7 +37,7 @@ devices:
     serial_number: SIM-AP-0001
     site: lab
     tags: [wireless, automation-enabled]
-    capabilities: [snmp, service-restart]
+    capabilities: [snmp, service-restart, config-update]
     credentials_ref: snmp/lab
     collection: {protocol: snmp, profile: vendor-ap, interval: 10s}
   - id: server-01

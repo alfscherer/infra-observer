@@ -9,6 +9,7 @@ const (
 	AutomationPending          AutomationStatus = "pending"           // waiting for not_before / conditions
 	AutomationAwaitingApproval AutomationStatus = "awaiting_approval" // policy demands a human
 	AutomationApproved         AutomationStatus = "approved"
+	AutomationExecuting        AutomationStatus = "executing" // claimed by a worker
 	AutomationSucceeded        AutomationStatus = "succeeded"
 	AutomationFailed           AutomationStatus = "failed"
 	AutomationDryRun           AutomationStatus = "dry_run" // executed against the adapter in dry-run mode

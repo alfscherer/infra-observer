@@ -24,6 +24,10 @@ type MemStore struct {
 	alerts      []domain.Alert
 	outbox      []outboxRow
 	nextOutbox  int64
+	autoReq     map[string]*domain.AutomationRequest
+	autoOrder   []string
+	autoRes     map[string]domain.AutomationResult
+	autoClaim   map[string]time.Time
 
 	// FailNext, when set, makes the next Do return this error before running fn
 	// (used to simulate a database outage).
@@ -40,7 +44,8 @@ func NewMemStore() *MemStore {
 	return &MemStore{
 		devices: map[string]domain.Device{}, observation: map[string]domain.Observation{},
 		states: map[string]domain.StateRecord{}, transitions: map[string]domain.Transition{},
-		events: map[string]domain.Event{},
+		events:  map[string]domain.Event{},
+		autoReq: map[string]*domain.AutomationRequest{}, autoRes: map[string]domain.AutomationResult{}, autoClaim: map[string]time.Time{},
 	}
 }
 
@@ -358,4 +363,190 @@ func (s *MemStore) Observation(id string) (domain.Observation, bool) {
 	defer s.mu.Unlock()
 	o, ok := s.observation[id]
 	return o, ok
+}
+
+// --- automation ---------------------------------------------------------------
+
+func (s *MemStore) enqueueLocked(msgs []OutboxMessage) {
+	for _, m := range msgs {
+		s.nextOutbox++
+		m.ID = s.nextOutbox
+		s.outbox = append(s.outbox, outboxRow{msg: m})
+	}
+}
+
+func (s *MemStore) InsertAutomationRequest(_ context.Context, req domain.AutomationRequest, outbox ...OutboxMessage) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.autoReq[req.RequestID]; ok {
+		return false, nil
+	}
+	r := req
+	s.autoReq[req.RequestID] = &r
+	s.autoOrder = append(s.autoOrder, req.RequestID)
+	s.enqueueLocked(outbox)
+	return true, nil
+}
+
+func (s *MemStore) DueAutomation(_ context.Context, now time.Time, lease time.Duration, limit int) ([]domain.AutomationRequest, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []domain.AutomationRequest
+	for _, id := range s.autoOrder {
+		r := s.autoReq[id]
+		due := false
+		switch r.Status {
+		case domain.AutomationPending:
+			due = !r.NotBefore.After(now)
+		case domain.AutomationApproved:
+			due = true
+		case domain.AutomationExecuting:
+			due = s.autoClaim[id].Add(lease).Before(now)
+		}
+		if due {
+			out = append(out, *r)
+			if len(out) == limit {
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
+func (s *MemStore) ClaimAutomation(_ context.Context, id string, now time.Time, lease time.Duration) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.autoReq[id]
+	if !ok {
+		return false, nil
+	}
+	claimable := r.Status == domain.AutomationPending || r.Status == domain.AutomationApproved ||
+		(r.Status == domain.AutomationExecuting && s.autoClaim[id].Add(lease).Before(now))
+	if !claimable {
+		return false, nil
+	}
+	r.Status, s.autoClaim[id] = domain.AutomationExecuting, now
+	return true, nil
+}
+
+func (s *MemStore) SetAutomationStatus(_ context.Context, id string, from []domain.AutomationStatus, to domain.AutomationStatus) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.autoReq[id]
+	if !ok {
+		return false, nil
+	}
+	for _, f := range from {
+		if r.Status == f {
+			r.Status = to
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *MemStore) ApproveAutomation(_ context.Context, id, by string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.autoReq[id]
+	if !ok || r.Status != domain.AutomationAwaitingApproval {
+		return false, nil
+	}
+	r.Status, r.ApprovedBy = domain.AutomationApproved, by
+	return true, nil
+}
+
+func (s *MemStore) CompleteAutomation(_ context.Context, res domain.AutomationResult, outbox ...OutboxMessage) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.autoReq[res.RequestID]
+	if !ok {
+		return false, domain.Errorf(domain.CategoryPermanent, "unknown automation request %s", res.RequestID)
+	}
+	if _, done := s.autoRes[res.RequestID]; done {
+		return false, nil
+	}
+	s.autoRes[res.RequestID] = res
+	r.Status = res.Status
+	s.enqueueLocked(outbox)
+	return true, nil
+}
+
+func (s *MemStore) AwaitingApprovalBefore(_ context.Context, cutoff time.Time) ([]domain.AutomationRequest, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []domain.AutomationRequest
+	for _, id := range s.autoOrder {
+		if r := s.autoReq[id]; r.Status == domain.AutomationAwaitingApproval && r.CreatedAt.Before(cutoff) {
+			out = append(out, *r)
+		}
+	}
+	return out, nil
+}
+
+func executed(st domain.AutomationStatus) bool {
+	return st == domain.AutomationSucceeded || st == domain.AutomationFailed || st == domain.AutomationDryRun
+}
+
+func (s *MemStore) AutomationHistory(_ context.Context, policyID, deviceID, target string, since time.Time) ([]domain.AutomationRequest, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []domain.AutomationRequest
+	for _, id := range s.autoOrder {
+		r := s.autoReq[id]
+		res, done := s.autoRes[id]
+		if r.PolicyID == policyID && r.DeviceID == deviceID && r.Target == target && executed(r.Status) && done && !res.FinishedAt.Before(since) {
+			out = append(out, *r)
+		}
+	}
+	return out, nil
+}
+
+func (s *MemStore) AttemptsForAlert(_ context.Context, policyID, alertKey string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, r := range s.autoReq {
+		if r.PolicyID == policyID && r.AlertKey == alertKey && executed(r.Status) {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (s *MemStore) AlertFiring(_ context.Context, alertKey string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, a := range s.alerts {
+		if a.AlertKey == alertKey && a.Status == domain.AlertFiring {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *MemStore) GetAutomation(_ context.Context, id string) (*domain.AutomationRequest, *domain.AutomationResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.autoReq[id]
+	if !ok {
+		return nil, nil, nil
+	}
+	req := *r
+	var res *domain.AutomationResult
+	if x, done := s.autoRes[id]; done {
+		res = &x
+	}
+	return &req, res, nil
+}
+
+// AutomationRequests returns all requests in insertion order (tests).
+func (s *MemStore) AutomationRequests() []domain.AutomationRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]domain.AutomationRequest, 0, len(s.autoOrder))
+	for _, id := range s.autoOrder {
+		out = append(out, *s.autoReq[id])
+	}
+	return out
 }
