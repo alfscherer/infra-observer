@@ -218,6 +218,13 @@ func (p *Processor) Process(ctx context.Context, o domain.Observation) (Outcome,
 	return out, nil
 }
 
+// PersistEvent stores an event produced outside the state engine (for example
+// by an integration script) and queues its notification, atomically and
+// idempotently on the event ID.
+func PersistEvent(ctx context.Context, store persistence.Store, ev domain.Event) error {
+	return store.Do(ctx, func(tx persistence.Tx) error { return recordEvent(ctx, tx, ev) })
+}
+
 // recordEvent persists an event and, only if it is new, queues its
 // notifications. The event ID is deterministic, so a replayed observation
 // finds the event already present and queues nothing.

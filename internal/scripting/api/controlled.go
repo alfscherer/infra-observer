@@ -265,6 +265,11 @@ func (h *host) installHTTP() {
 				req.Header.Set("Authorization", "Bearer "+tok)
 			}
 			req.Header.Set("User-Agent", "infra-observer-script/1")
+			// Delivery to an integration is at-least-once. A stable key per
+			// (script, trigger) lets the receiver drop the duplicate.
+			if c.Trigger != "" {
+				req.Header.Set("Idempotency-Key", domain.StableID("idem", c.Script.Key, c.Trigger))
+			}
 			if c.CorrelationID != "" && req.Header.Get("X-Request-Id") == "" {
 				req.Header.Set("X-Request-Id", c.CorrelationID)
 			}

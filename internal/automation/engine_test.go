@@ -634,3 +634,20 @@ func TestOutcomeHooks(t *testing.T) {
 	}
 	_ = errors.New
 }
+
+func TestRetryablePlatformFailureFromProposerIsNotSwallowed(t *testing.T) {
+	r := newRig(t, true)
+	r.e.Proposer = fakeProposer{err: domain.Errorf(domain.CategoryTransient, "script executor saturated")}
+	ev := r.openAlert(t, "switch-01", "script.trouble", nil, t0)
+	if _, err := r.e.HandleEvent(context.Background(), ev); err == nil || !domain.IsRetryable(err) {
+		t.Fatalf("a platform failure must fail the delivery so it is retried, got %v", err)
+	}
+	if len(r.store.AutomationRequests()) != 0 {
+		t.Fatal("no denial may be recorded for something that was never actually decided")
+	}
+	// the retry, once the executor has capacity, works normally
+	r.e.Proposer = fakeProposer{prop: &Proposal{Action: "noop"}}
+	if reqs, err := r.e.HandleEvent(context.Background(), ev); err != nil || len(reqs) != 1 {
+		t.Fatalf("%v %v", reqs, err)
+	}
+}

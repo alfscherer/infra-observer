@@ -1,0 +1,30 @@
+{
+  "description": "remediation proposals are conservative, and always valid catalog actions",
+  "allowed_actions": ["bounce_interface", "enable_interface"],
+  "cases": [
+    {
+      "name": "proposes bouncing an ordinary down lab interface",
+      "device": "switch-01",
+      "input": {"event_id": "e1", "correlation_id": "c1", "device_id": "switch-01", "type": "interface.down", "severity": "warning", "message": "down", "labels": {"interface": "Gi0/2", "if_index": "2"}, "occurred_at": "2026-08-01T12:00:00Z", "source": "interface-operational", "alert_key": "k"},
+      "expect": {"action": "bounce_interface", "target": "Gi0/2", "reason": "Interface Gi0/2 on switch-01.lab.example remained down beyond the policy threshold"}
+    },
+    {
+      "name": "never touches an interface the operator marked as an uplink",
+      "device": "switch-01",
+      "input": {"event_id": "e2", "correlation_id": "c1", "device_id": "switch-01", "type": "interface.down", "severity": "warning", "message": "down", "labels": {"interface": "Gi0/1", "if_index": "1"}, "occurred_at": "2026-08-01T12:00:00Z", "source": "interface-operational", "alert_key": "k"},
+      "expect": null
+    },
+    {
+      "name": "no proposal when the event carries no interface",
+      "device": "switch-01",
+      "input": {"event_id": "e3", "correlation_id": "c1", "device_id": "switch-01", "type": "interface.down", "severity": "warning", "message": "down", "occurred_at": "2026-08-01T12:00:00Z", "source": "interface-operational", "alert_key": "k"},
+      "expect": null
+    },
+    {
+      "name": "devices without the automation tag get nothing",
+      "device": "switch-02",
+      "input": {"event_id": "e4", "correlation_id": "c1", "device_id": "switch-02", "type": "interface.down", "severity": "warning", "message": "down", "labels": {"interface": "Gi0/2", "if_index": "2"}, "occurred_at": "2026-08-01T12:00:00Z", "source": "interface-operational", "alert_key": "k"},
+      "expect": null
+    }
+  ]
+}

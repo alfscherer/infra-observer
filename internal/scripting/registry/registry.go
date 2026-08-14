@@ -59,6 +59,8 @@ type Script struct {
 	Version     string
 	Description string
 	Metrics     []string // metric names (or prefix*) the script handles; Go filters before calling JS
+	Events      []string // event types (or prefix*) an integration handles
+	MinSeverity string   // integrations: ignore events below this severity
 	Hash        string
 	Status      Status
 	Reason      string // why it is not active
@@ -233,11 +235,11 @@ func (r *Registry) MarkFailed(key, reason string) {
 
 // SetMeta records metadata read from a loaded script (called by the service
 // after it evaluates `meta` in a scratch interpreter).
-func (r *Registry) SetMeta(key, version, description string, metrics []string) {
+func (r *Registry) SetMeta(key, version, description string, metrics, events []string, minSeverity string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if s, ok := r.scripts[key]; ok {
-		s.Version, s.Description, s.Metrics = version, description, metrics
+		s.Version, s.Description, s.Metrics, s.Events, s.MinSeverity = version, description, metrics, events, minSeverity
 	}
 }
 

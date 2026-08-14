@@ -1,0 +1,30 @@
+{
+  "description": "the webhook integration posts events through a granted endpoint and reports failures instead of throwing",
+  "config": {"endpoint_ref": "hook"},
+  "cases": [
+    {
+      "name": "posts a critical device event",
+      "device": "server-01",
+      "input": {"event_id": "e1", "correlation_id": "c1", "device_id": "server-01", "type": "device.down", "severity": "critical", "message": "server-01 is unreachable", "occurred_at": "2026-08-01T12:00:00Z", "source": "device-reachability", "alert_key": "k"},
+      "http": {"responses": [{"method": "POST", "path": "/v1/alerts", "status": 202, "body": "{}"}]},
+      "expect": {"ok": true},
+      "expect_requests": [{"method": "POST", "path": "/v1/alerts", "body_subset": {"severity": "critical", "device": "server-01", "hostname": "server-01.lab.example", "correlation_id": "c1", "resolved": false}}]
+    },
+    {
+      "name": "reports a rejection without throwing",
+      "device": "server-01",
+      "input": {"event_id": "e2", "correlation_id": "c1", "device_id": "server-01", "type": "device.down", "severity": "critical", "message": "m", "occurred_at": "2026-08-01T12:00:00Z", "source": "s", "alert_key": "k"},
+      "http": {"responses": [{"method": "POST", "path": "/v1/alerts", "status": 503, "body": "busy"}]},
+      "expect": {"ok": false, "message": "webhook returned 503"},
+      "expect_requests": [{"method": "POST", "path": "/v1/alerts"}]
+    },
+    {
+      "name": "refuses to run without a configured endpoint",
+      "device": "server-01",
+      "config": {"endpoint_ref": ""},
+      "input": {"event_id": "e3", "correlation_id": "c1", "device_id": "server-01", "type": "device.down", "severity": "critical", "message": "m", "occurred_at": "2026-08-01T12:00:00Z", "source": "s", "alert_key": "k"},
+      "expect": {"ok": false, "message": "no endpoint_ref configured"},
+      "expect_requests": []
+    }
+  ]
+}

@@ -63,7 +63,7 @@ func setup(t *testing.T, files map[string]string, settings map[string]map[string
 	for name, src := range files { // name is kind/id
 		p := filepath.Join(dir, name+".js")
 		_ = os.MkdirAll(filepath.Dir(p), 0o755)
-		if err := os.WriteFile(p, []byte("export const meta = {version: \"1\", description: \"t\", metrics: [\"*\"]}\n"+src), 0o644); err != nil {
+		if err := os.WriteFile(p, []byte("export const meta = {version: \"1\", description: \"t\", metrics: [\"*\"], events: [\"*\"]}\n"+src), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}

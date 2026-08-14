@@ -79,6 +79,8 @@ func (s *Service) Reload() registry.Report {
 			Version     string   `json:"version"`
 			Description string   `json:"description"`
 			Metrics     []string `json:"metrics"`
+			Events      []string `json:"events"`
+			MinSeverity string   `json:"min_severity"`
 		}
 		problem := ""
 		switch {
@@ -89,6 +91,10 @@ func (s *Service) Reload() registry.Report {
 			// filter mandatory keeps "call JavaScript for everything" from ever
 			// being the default.
 			problem = "transform scripts must declare meta.metrics (metric names, or prefixes ending in *)"
+		case sc.Kind == registry.KindIntegration && len(meta.Events) == 0:
+			problem = "integration scripts must declare meta.events (event types, or prefixes ending in *)"
+		case meta.MinSeverity != "" && !domain.Severity(meta.MinSeverity).Valid():
+			problem = "meta.min_severity must be info, warning or critical"
 		}
 		if problem != "" {
 			s.Registry.MarkFailed(sc.Key, problem)
@@ -97,7 +103,7 @@ func (s *Service) Reload() registry.Report {
 			rep.Errors = append(rep.Errors, sc.Key+": "+problem)
 			continue
 		}
-		s.Registry.SetMeta(sc.Key, meta.Version, meta.Description, meta.Metrics)
+		s.Registry.SetMeta(sc.Key, meta.Version, meta.Description, meta.Metrics, meta.Events, meta.MinSeverity)
 	}
 	sort.Strings(rep.Errors)
 	for _, e := range rep.Errors {

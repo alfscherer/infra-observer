@@ -158,7 +158,7 @@ func TestShippedScriptsPassTheirFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 	reg := inventory.NewRegistry(devs)
-	for _, kind := range []string{"transforms", "enrichers"} {
+	for _, kind := range []string{"transforms", "enrichers", "automation", "integrations"} {
 		files, _ := filepath.Glob(filepath.Join("../../../scripts", kind, "*.js"))
 		if len(files) == 0 {
 			t.Fatalf("no %s shipped", kind)

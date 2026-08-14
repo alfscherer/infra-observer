@@ -78,6 +78,12 @@ func (e *Engine) HandleEvent(ctx context.Context, ev domain.Event) ([]domain.Aut
 	var created []domain.AutomationRequest
 	for _, pol := range e.Policies.Match(ev, dev) {
 		prop, perr := e.propose(ctx, pol, ev, dev)
+		if perr != nil && domain.IsRetryable(perr) {
+			// The platform, not the script, failed (for example the script
+			// executor is saturated). Fail the delivery so it is retried instead
+			// of recording a denial that would swallow this event.
+			return created, perr
+		}
 		if prop == nil && perr == nil {
 			continue // the proposer had nothing to suggest
 		}
