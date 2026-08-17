@@ -309,6 +309,9 @@ func (e *Engine) process(ctx context.Context, req domain.AutomationRequest) erro
 	if pol.Proposal != nil && !containsStr(pol.Proposal.AllowedActions, req.Action) {
 		return deny("policy", fmt.Sprintf("policy no longer allows %s", req.Action))
 	}
+	if req.Action == "invoke_extension" && !e.Policies.ExtensionApproved(req.Params["script"]) {
+		return deny("extension", fmt.Sprintf("script %q is not on the approved extension list", req.Params["script"]))
+	}
 	if !dev.HasTag(pol.Safety.RequireTag) {
 		return deny("tag", fmt.Sprintf("device lacks the required tag %q", pol.Safety.RequireTag))
 	}

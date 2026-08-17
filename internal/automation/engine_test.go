@@ -651,3 +651,27 @@ func TestRetryablePlatformFailureFromProposerIsNotSwallowed(t *testing.T) {
 		t.Fatalf("%v %v", reqs, err)
 	}
 }
+
+func TestInvokeExtensionRequiresAnApprovedScript(t *testing.T) {
+	r := newRig(t, true)
+	pols, err := Parse([]byte(`
+allowed_extensions: [webhook]
+policies:
+  - {id: ok, trigger: {event: ext.ok}, action: {type: invoke_extension, script: webhook}, safety: {cooldown: 1m}}
+  - {id: bad, trigger: {event: ext.bad}, action: {type: invoke_extension, script: something-else}, safety: {cooldown: 1m}}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.e.Policies = pols
+	okReq := r.handle(t, r.openAlert(t, "server-01", "ext.ok", nil, t0))[0]
+	badReq := r.handle(t, r.openAlert(t, "server-01", "ext.bad", nil, t0))[0]
+	r.tick(t)
+	if got, _ := r.result(t, okReq.RequestID); got.Status != domain.AutomationDryRun {
+		t.Fatalf("approved script: %+v", got)
+	}
+	got, res := r.result(t, badReq.RequestID)
+	if got.Status != domain.AutomationDenied || res.Details["gate"] != "extension" || r.adapter.count() != 1 {
+		t.Fatalf("an unapproved script must never be invoked: %+v %+v", got, res)
+	}
+}

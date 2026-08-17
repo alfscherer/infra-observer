@@ -67,6 +67,7 @@ var Catalog = func() map[string]ActionSpec {
 		{Name: "bounce_interface", Description: "disable then enable an interface", DeviceTypes: netTypes, Capability: "interface-admin", NeedsTarget: true, Target: reIface, Disruptive: true},
 		{Name: "set_interface_description", Description: "update an interface description", DeviceTypes: netTypes, Capability: "interface-admin", NeedsTarget: true, Target: reIface, Disruptive: true,
 			Params: []ParamSpec{p("description", true, reText)}},
+		{Name: "query_interface_state", Description: "read an interface's operational and administrative state over SNMP", DeviceTypes: append(append([]domain.DeviceType{}, netTypes...), domain.DeviceAccessPoint), NeedsTarget: true, Target: reIface},
 		{Name: "query_vlan_state", Description: "read VLAN state", DeviceTypes: netTypes, Params: []ParamSpec{p("vlan", false, reVLAN)}},
 		// access point
 		{Name: "restart_ap_service", Description: "restart a service on an access point", DeviceTypes: []domain.DeviceType{domain.DeviceAccessPoint}, Capability: "service-restart", Disruptive: true,

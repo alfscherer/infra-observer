@@ -209,18 +209,20 @@ func (w Window) Active(now time.Time, dev domain.Device) bool {
 
 // Policies is a validated policy file.
 type Policies struct {
-	Allowlist []string
-	Windows   []Window
-	policies  []Policy
-	byID      map[string]Policy
+	Allowlist         []string
+	AllowedExtensions []string // integration scripts invoke_extension may run
+	Windows           []Window
+	policies          []Policy
+	byID              map[string]Policy
 }
 
 type file struct {
 	Allowlist struct {
 		Devices StringList `yaml:"devices"`
 	} `yaml:"allowlist"`
-	MaintenanceWindows []Window `yaml:"maintenance_windows"`
-	Policies           []Policy `yaml:"policies"`
+	AllowedExtensions  StringList `yaml:"allowed_extensions"`
+	MaintenanceWindows []Window   `yaml:"maintenance_windows"`
+	Policies           []Policy   `yaml:"policies"`
 }
 
 // Default applied when a policy does not set them: a policy never runs
@@ -252,7 +254,7 @@ func Parse(raw []byte) (*Policies, error) {
 	if err := dec.Decode(&f); err != nil {
 		return nil, err
 	}
-	ps := &Policies{Allowlist: f.Allowlist.Devices, Windows: f.MaintenanceWindows, byID: map[string]Policy{}}
+	ps := &Policies{Allowlist: f.Allowlist.Devices, AllowedExtensions: f.AllowedExtensions, Windows: f.MaintenanceWindows, byID: map[string]Policy{}}
 	for _, w := range f.MaintenanceWindows {
 		if err := validateWindow(w); err != nil {
 			return nil, err
@@ -383,6 +385,16 @@ func (ps *Policies) Get(id string) (Policy, bool) {
 func (ps *Policies) Allowlisted(deviceID string) bool {
 	for _, d := range ps.Allowlist {
 		if d == deviceID {
+			return true
+		}
+	}
+	return false
+}
+
+// ExtensionApproved reports whether an integration script may be invoked as an action.
+func (ps *Policies) ExtensionApproved(script string) bool {
+	for _, s := range ps.AllowedExtensions {
+		if s == script {
 			return true
 		}
 	}

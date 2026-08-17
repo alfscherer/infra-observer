@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"time"
@@ -38,6 +39,27 @@ func (w *World) ServeControl(nc *nats.Conn) (*nats.Subscription, error) {
 	})
 }
 
+// Controller applies scenarios to a simulator, whether in-process or over NATS.
+type Controller interface {
+	Apply(ctx context.Context, s Scenario) (string, error)
+}
+
+// NATSController drives a running simulator through its control subject. The
+// mock device adapters use it so that an automation action visibly changes
+// the simulated device, closing the loop from alert to recovery.
+type NATSController struct {
+	Conn    *nats.Conn
+	Timeout time.Duration
+}
+
+func (c NATSController) Apply(_ context.Context, s Scenario) (string, error) {
+	t := c.Timeout
+	if t <= 0 {
+		t = 3 * time.Second
+	}
+	return SendScenario(c.Conn, s, t)
+}
+
 // SendScenario asks a running simulator to apply s.
 func SendScenario(nc *nats.Conn, s Scenario, timeout time.Duration) (string, error) {
 	b, err := json.Marshal(s)
@@ -59,4 +81,13 @@ func SendScenario(nc *nats.Conn, s Scenario, timeout time.Duration) (string, err
 		return "", errors.New(r.Message)
 	}
 	return r.Message, nil
+}
+
+// DeviceController adapts a Controller to the operation shape the automation
+// adapters use: Do(ctx, device, event, args).
+type DeviceController struct{ C Controller }
+
+func (d DeviceController) Do(ctx context.Context, device, event string, args map[string]string) error {
+	_, err := d.C.Apply(ctx, Scenario{Device: device, Event: event, Args: args})
+	return err
 }

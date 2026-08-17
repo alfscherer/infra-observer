@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -34,13 +35,20 @@ func Events(t domain.DeviceType) []string {
 	ev := []string{"offline", "online", "auth-failure", "auth-ok", "reset", "high-cpu", "cpu-normal", "overheat", "cool"}
 	switch t {
 	case domain.DeviceSwitch, domain.DeviceRouter, domain.DeviceAccessPoint:
-		ev = append(ev, "interface-down", "interface-up", "interface-flap", "packet-errors", "errors-clear")
+		ev = append(ev, "interface-down", "interface-up", "interface-flap", "interface-admin-down", "interface-admin-up", "packet-errors", "errors-clear")
 	case domain.DeviceUPS:
 		ev = append(ev, "power-loss", "power-restore")
 	}
 	sort.Strings(ev)
 	return ev
 }
+
+// Control adapts the world to the Controller interface.
+func (w *World) Control() Controller { return worldController{w} }
+
+type worldController struct{ w *World }
+
+func (c worldController) Apply(_ context.Context, s Scenario) (string, error) { return c.w.Apply(s) }
 
 // Apply performs a scenario. It returns a human-readable description.
 func (w *World) Apply(s Scenario) (string, error) {
@@ -129,6 +137,12 @@ func (w *World) applyLocked(d *Device, event string, args map[string]string) (st
 	case "interface-up":
 		i.OperUp = true
 		return fmt.Sprintf("%s %s is up", d.ID, i.Name), nil
+	case "interface-admin-down":
+		i.AdminUp = false
+		return fmt.Sprintf("%s %s is administratively disabled", d.ID, i.Name), nil
+	case "interface-admin-up":
+		i.AdminUp, i.OperUp = true, true
+		return fmt.Sprintf("%s %s is administratively enabled", d.ID, i.Name), nil
 	case "interface-flap":
 		toggles, interval := 14, 8*time.Second
 		if v, err := strconv.Atoi(args["toggles"]); err == nil && v > 0 {
