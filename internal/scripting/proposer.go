@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/alfscherer/infra-observer/internal/automation"
 	"github.com/alfscherer/infra-observer/internal/domain"
@@ -140,4 +141,37 @@ func (r IntegrationRunner) Run(ctx context.Context, ev domain.Event, dev domain.
 		}
 	}
 	return nil
+}
+
+// Invoke runs an integration script on demand as the invoke_extension action.
+// The automation engine has already checked the script is on the approved
+// list. The script sees a synthetic automation.invoked event.
+func (r IntegrationRunner) Invoke(ctx context.Context, script string, dev domain.Device, requestID, correlationID string, params map[string]string) (string, error) {
+	sc, ok := r.Ext.Svc.Registry.Get(registry.KindIntegration + "/" + script)
+	if !ok || sc.Status != registry.StatusActive {
+		return "", fmt.Errorf("%w: integrations/%s", ErrNotActive, script)
+	}
+	ev := domain.Event{
+		EventID: domain.StableID("evt", "invoke", requestID), CorrelationID: correlationID, DeviceID: dev.ID, Type: "automation.invoked",
+		Severity: domain.SeverityInfo, Message: "extension invoked by an automation policy", Labels: params,
+		OccurredAt: time.Now().UTC(), Source: "automation",
+	}
+	res, emitted, err := r.Ext.RunHandle(ctx, sc, ev, dev)
+	if err != nil {
+		return "", err
+	}
+	for _, e := range emitted {
+		if r.Persist != nil {
+			if perr := r.Persist(ctx, e); perr != nil {
+				return "", perr
+			}
+		}
+	}
+	if !res.OK {
+		return "", domain.Errorf(domain.CategoryPermanent, "extension %s reported failure: %s", script, res.Message)
+	}
+	if res.Message == "" {
+		return "extension " + script + " completed", nil
+	}
+	return res.Message, nil
 }

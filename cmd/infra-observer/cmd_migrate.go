@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+
 	"flag"
 	"fmt"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"os/signal"
 	"syscall"
 	"time"
@@ -12,6 +14,10 @@ import (
 	"github.com/alfscherer/infra-observer/internal/persistence"
 	"github.com/alfscherer/infra-observer/migrations"
 )
+
+func runMigrations(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
+	return persistence.Migrate(ctx, pool, migrations.FS)
+}
 
 func cmdMigrate(args []string) error {
 	fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
@@ -35,7 +41,7 @@ func cmdMigrate(args []string) error {
 		return err
 	}
 	defer pool.Close()
-	applied, err := persistence.Migrate(ctx, pool, migrations.FS)
+	applied, err := runMigrations(ctx, pool)
 	if err != nil {
 		return err
 	}

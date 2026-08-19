@@ -65,6 +65,9 @@ type Store interface {
 
 	// UpsertDevices mirrors registered devices into storage without touching last_seen.
 	UpsertDevices(ctx context.Context, devices []domain.Device) error
+	// UpdateDeviceAttributes merges observed facts (for example sys_name) into a
+	// device's attributes without touching anything else.
+	UpdateDeviceAttributes(ctx context.Context, deviceID string, attrs map[string]string) error
 	// ListDevices returns mirrored devices including last_seen, ordered by id.
 	ListDevices(ctx context.Context) ([]domain.Device, error)
 	// Latest returns the most recent stored observation of a series, or nil.

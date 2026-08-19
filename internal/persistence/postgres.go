@@ -341,6 +341,13 @@ func nonNil(s []string) []string {
 	return s
 }
 
+func (s *PGStore) UpdateDeviceAttributes(ctx context.Context, id string, attrs map[string]string) error {
+	if _, err := s.pool.Exec(ctx, `UPDATE devices SET attributes = attributes || $2::jsonb, updated_at = now() WHERE id = $1`, id, js(attrs)); err != nil {
+		return s.fail("update device attributes", err)
+	}
+	return nil
+}
+
 func (s *PGStore) ListDevices(ctx context.Context) ([]domain.Device, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, hostname, management_address, device_type, vendor, model, serial_number, site, tags, capabilities,

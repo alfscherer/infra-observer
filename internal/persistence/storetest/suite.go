@@ -250,12 +250,16 @@ func Run(t *testing.T, newStore Factory) {
 			if err := s.UpsertDevices(ctx, []domain.Device{d}); err != nil {
 				t.Fatal(err)
 			}
+			if err := s.UpdateDeviceAttributes(ctx, "sw1", map[string]string{"observed.sys_name": "sw1-real", "a": "changed"}); err != nil {
+				t.Fatal(err)
+			}
+			_ = s.UpdateDeviceAttributes(ctx, "unknown-device", map[string]string{"x": "y"}) // must be a harmless no-op
 			list, err := s.ListDevices(ctx)
 			if err != nil || len(list) != 1 {
 				t.Fatalf("%v %v", list, err)
 			}
 			got := list[0]
-			if got.Hostname != "renamed" || !got.LastSeen.Equal(t0) || got.Tags[0] != "core" || got.Attributes["a"] != "b" ||
+			if got.Hostname != "renamed" || !got.LastSeen.Equal(t0) || got.Tags[0] != "core" || got.Attributes["a"] != "changed" || got.Attributes["observed.sys_name"] != "sw1-real" ||
 				got.Collection.Profile != "p" || got.DeviceType != domain.DeviceSwitch {
 				t.Fatalf("device round trip: %+v", got)
 			}

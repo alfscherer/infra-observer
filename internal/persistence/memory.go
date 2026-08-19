@@ -227,6 +227,25 @@ func (s *MemStore) UpsertDevices(_ context.Context, devices []domain.Device) err
 	return nil
 }
 
+func (s *MemStore) UpdateDeviceAttributes(_ context.Context, id string, attrs map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, ok := s.devices[id]
+	if !ok {
+		return nil
+	}
+	merged := map[string]string{}
+	for k, v := range d.Attributes {
+		merged[k] = v
+	}
+	for k, v := range attrs {
+		merged[k] = v
+	}
+	d.Attributes = merged
+	s.devices[id] = d
+	return nil
+}
+
 func (s *MemStore) ListDevices(_ context.Context) ([]domain.Device, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

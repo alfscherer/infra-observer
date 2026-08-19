@@ -188,6 +188,15 @@ type Message struct {
 	msg jetstream.Msg
 }
 
+// StreamSeq is the message's sequence number in its stream, or 0 if unknown.
+func (m Message) StreamSeq() uint64 {
+	md, err := m.msg.Metadata()
+	if err != nil {
+		return 0
+	}
+	return md.Sequence.Stream
+}
+
 func (m Message) Data() []byte              { return m.msg.Data() }
 func (m Message) Subject() string           { return m.msg.Subject() }
 func (m Message) Header() nats.Header       { return m.msg.Headers() }
@@ -205,53 +214,11 @@ func (m Message) Attempt() uint64 {
 	return md.NumDelivered
 }
 
-// Handler processes one message. Returning nil acknowledges it; returning an
-// error negatively acknowledges so JetStream redelivers.
+// Handler processes one message. Returning nil acknowledges it. Returning an
+// error hands the decision to the worker, which looks at the error's category:
+// retryable errors are redelivered with backoff, everything else is
+// dead-lettered.
 type Handler func(ctx context.Context, m Message) error
-
-// ConsumerSpec describes a durable pull consumer. Consumers sharing a Durable
-// name form a consumer group: each message goes to exactly one member.
-type ConsumerSpec struct {
-	Stream        string
-	Durable       string
-	FilterSubject string
-	AckWait       time.Duration
-	MaxDeliver    int
-	MaxAckPending int
-}
-
-// Consume attaches handler to a durable consumer and runs until ctx ends.
-// Messages are acknowledged only after the handler returns nil.
-func (c *Client) Consume(ctx context.Context, spec ConsumerSpec, handler Handler) error {
-	cons, err := c.js.CreateOrUpdateConsumer(ctx, spec.Stream, jetstream.ConsumerConfig{
-		Durable:       spec.Durable,
-		FilterSubject: spec.FilterSubject,
-		AckPolicy:     jetstream.AckExplicitPolicy,
-		AckWait:       spec.AckWait,
-		MaxDeliver:    spec.MaxDeliver,
-		MaxAckPending: spec.MaxAckPending,
-	})
-	if err != nil {
-		return domain.Wrap(domain.CategoryDependency, "create consumer "+spec.Durable, err)
-	}
-	cc, err := cons.Consume(func(m jetstream.Msg) {
-		msg := Message{msg: m}
-		if herr := handler(ctx, msg); herr != nil {
-			c.log.Warn("handler failed; requesting redelivery", "subject", m.Subject(), "error", herr)
-			_ = msg.Nak(time.Second)
-			return
-		}
-		if aerr := msg.Ack(); aerr != nil {
-			c.log.Warn("ack failed; message may be redelivered", "subject", m.Subject(), "error", aerr)
-		}
-	})
-	if err != nil {
-		return domain.Wrap(domain.CategoryDependency, "start consumer "+spec.Durable, err)
-	}
-	<-ctx.Done()
-	cc.Stop()
-	return nil
-}
 
 // String describes the connection for logs.
 func (c *Client) String() string { return fmt.Sprintf("nats(%s)", c.nc.ConnectedUrl()) }

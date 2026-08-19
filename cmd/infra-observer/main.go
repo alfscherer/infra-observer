@@ -41,6 +41,14 @@ func run(args []string) error {
 		return cmdScenario(rest)
 	case "script":
 		return cmdScript(rest)
+	case "processor":
+		return cmdProcessor(rest)
+	case "automation-worker":
+		return cmdAutomationWorker(rest)
+	case "deadletter":
+		return cmdDeadLetter(rest)
+	case "replay":
+		return cmdReplay(rest)
 	case "help", "-h", "--help":
 		usage()
 		return nil
@@ -57,7 +65,11 @@ commands:
   migrate             apply pending database migrations
   collector           poll devices and publish raw observations
   simulator           run the simulated lab (SNMP agents + scenario control)
+  processor           run the processing pipeline (normalize, enrich, state, rules, persist)
+  automation-worker   react to alerts: policies, proposals, integrations, adapters
   scenario            apply a scenario to the running simulator
+  deadletter          list, replay or purge dead-lettered messages
+  replay              republish a stream window so the pipeline processes it again
   script test|test-all|validate|list   develop and check JavaScript extensions
   version             print the build version
 
