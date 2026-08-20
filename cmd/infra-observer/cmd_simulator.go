@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"github.com/alfscherer/infra-observer/internal/config"
+	"github.com/alfscherer/infra-observer/internal/health"
 	"github.com/alfscherer/infra-observer/internal/inventory"
 	"github.com/alfscherer/infra-observer/internal/messaging"
 	"github.com/alfscherer/infra-observer/internal/sim"
+	"github.com/alfscherer/infra-observer/internal/telemetry"
 )
 
 // cmdSimulator runs the lab: one SNMPv2c agent per inventory device plus a
@@ -55,6 +57,7 @@ func cmdSimulator(args []string) error {
 		return err
 	}
 	defer client.Close()
+	serveObservability(ctx, cfg, log, telemetry.New(), health.NewChecker(version, natsCheck(client)))
 	sub, err := world.ServeControl(client.Conn())
 	if err != nil {
 		return err

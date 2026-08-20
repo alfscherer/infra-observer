@@ -22,17 +22,18 @@ import (
 const EnvPrefix = "INFRA_OBSERVER"
 
 type Config struct {
-	Logging    Logging    `yaml:"logging"`
-	NATS       NATS       `yaml:"nats"`
-	Database   Database   `yaml:"database"`
-	Inventory  Inventory  `yaml:"inventory"`
-	Collectors Collectors `yaml:"collectors"`
-	Processing Processing `yaml:"processing"`
-	Scripting  Scripting  `yaml:"scripting"`
-	Automation Automation `yaml:"automation"`
-	API        API        `yaml:"api"`
-	Secrets    Secrets    `yaml:"secrets"`
-	Simulator  Simulator  `yaml:"simulator"`
+	Logging       Logging       `yaml:"logging"`
+	NATS          NATS          `yaml:"nats"`
+	Database      Database      `yaml:"database"`
+	Inventory     Inventory     `yaml:"inventory"`
+	Collectors    Collectors    `yaml:"collectors"`
+	Processing    Processing    `yaml:"processing"`
+	Scripting     Scripting     `yaml:"scripting"`
+	Automation    Automation    `yaml:"automation"`
+	API           API           `yaml:"api"`
+	Secrets       Secrets       `yaml:"secrets"`
+	Simulator     Simulator     `yaml:"simulator"`
+	Observability Observability `yaml:"observability"`
 
 	// Scripts holds per-script settings keyed by kind then script id, kept apart
 	// from script source so secrets and endpoints never live in JavaScript.
@@ -126,6 +127,11 @@ type Secrets struct {
 	Dir string `yaml:"dir"`
 }
 
+// Observability configures the per-process metrics and health listener.
+type Observability struct {
+	Listen string `yaml:"listen"` // e.g. ":9090"; empty disables
+}
+
 type Simulator struct {
 	BindHost string `yaml:"bind_host"`
 	Seed     int64  `yaml:"seed"`
@@ -154,10 +160,11 @@ func Default() Config {
 			Enabled: true, Directories: []string{"./scripts"}, Workers: 4, QueueSize: 128,
 			ExecutionTimeout: 250 * time.Millisecond, QuarantineAfter: 5,
 		},
-		Automation: Automation{DefaultDryRun: true, PoliciesFile: "configs/automation.yaml", TickInterval: 5 * time.Second, Workers: 4},
-		API:        API{Listen: ":8080", DefaultPageSize: 50, MaxPageSize: 500},
-		Secrets:    Secrets{Dir: "secrets"},
-		Simulator:  Simulator{BindHost: "0.0.0.0", Seed: 1},
+		Automation:    Automation{DefaultDryRun: true, PoliciesFile: "configs/automation.yaml", TickInterval: 5 * time.Second, Workers: 4},
+		API:           API{Listen: ":8080", DefaultPageSize: 50, MaxPageSize: 500},
+		Secrets:       Secrets{Dir: "secrets"},
+		Simulator:     Simulator{BindHost: "0.0.0.0", Seed: 1},
+		Observability: Observability{Listen: ":9090"},
 	}
 }
 

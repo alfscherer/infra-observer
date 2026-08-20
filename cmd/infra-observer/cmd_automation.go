@@ -10,6 +10,7 @@ import (
 	"github.com/alfscherer/infra-observer/internal/collector/snmp"
 	"github.com/alfscherer/infra-observer/internal/config"
 	"github.com/alfscherer/infra-observer/internal/domain"
+	"github.com/alfscherer/infra-observer/internal/health"
 	"github.com/alfscherer/infra-observer/internal/inventory"
 	"github.com/alfscherer/infra-observer/internal/messaging"
 	"github.com/alfscherer/infra-observer/internal/pipeline"
@@ -19,6 +20,7 @@ import (
 	"github.com/alfscherer/infra-observer/internal/scripting/runtime"
 	"github.com/alfscherer/infra-observer/internal/secrets"
 	"github.com/alfscherer/infra-observer/internal/sim"
+	"github.com/alfscherer/infra-observer/internal/telemetry"
 )
 
 // cmdAutomationWorker runs the automation subsystem: it consumes alert events,
@@ -46,17 +48,20 @@ func cmdAutomationWorker(args []string) error {
 	if err != nil {
 		return err
 	}
+	m := telemetry.New()
 	store, err := connectDatabase(ctx, cfg, log, false)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
+	store.OnError = m.DatabaseError
 	client, err := connectNATS(ctx, cfg, "automation-worker", log)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 
+	checks := []health.Check{postgresCheck(store), natsCheck(client)}
 	resolver := secrets.EnvFile{Dir: cfg.Secrets.Dir}
 	validator := schema.NewValidator()
 
@@ -70,6 +75,8 @@ func cmdAutomationWorker(args []string) error {
 		defer svc.Close()
 		log.Info("scripting enabled", "loaded", rep.Loaded, "failed", rep.Failed, "disabled", rep.Disabled)
 		ext = &scripting.Extensions{Svc: svc, Validator: validator, Log: log}
+		m.AttachScripting(svc)
+		checks = append(checks, scriptingCheck(svc))
 		runner = scripting.IntegrationRunner{Ext: ext, Log: log, Persist: func(ctx context.Context, ev domain.Event) error {
 			return pipeline.PersistEvent(ctx, store, ev)
 		}}
@@ -92,6 +99,7 @@ func cmdAutomationWorker(args []string) error {
 	engine := &automation.Engine{
 		Policies: policies, Store: store, Devices: registry, GlobalDryRun: cfg.Automation.DefaultDryRun,
 		Adapters: adapters.NewSet(sim.DeviceController{C: sim.NATSController{Conn: client.Conn()}}, reader, generic), Log: log,
+		OnRequest: m.AutomationRequest, OnResult: m.AutomationResult,
 	}
 	if ext != nil {
 		engine.Proposer = ext
@@ -101,11 +109,14 @@ func cmdAutomationWorker(args []string) error {
 		handler.Integrations = runner
 	}
 
-	worker := client.NewWorker(workerOptions(cfg, log, "automation", messaging.StreamEvents, "automation", messaging.SubjectEventAlert),
-		func(ctx context.Context, m messaging.Message) error { return handler.Handle(ctx, m.Data()) })
+	opts := workerOptions(cfg, log, m, "automation", messaging.StreamEvents, "automation", messaging.SubjectEventAlert)
+	worker := client.NewWorker(opts, func(ctx context.Context, msg messaging.Message) error { return handler.Handle(ctx, msg.Data()) })
+	m.AttachWorker("automation", worker)
+	serveObservability(ctx, cfg, log, m, health.NewChecker(version, checks...))
+	go m.WatchBacklog(ctx, client, 5*time.Second, telemetry.Consumer{Stream: opts.Stream, Durable: opts.Durable})
 
 	go func() {
-		relay := &pipeline.Relay{Store: store, Publisher: client, Log: log}
+		relay := &pipeline.Relay{Store: store, Publisher: client, Log: log, OnPublished: func(n int) { m.OutboxPublished.Add(float64(n)) }}
 		relay.Run(ctx)
 	}()
 	go func() {

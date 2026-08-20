@@ -9,9 +9,11 @@ import (
 	"github.com/alfscherer/infra-observer/internal/collector"
 	"github.com/alfscherer/infra-observer/internal/collector/snmp"
 	"github.com/alfscherer/infra-observer/internal/config"
+	"github.com/alfscherer/infra-observer/internal/health"
 	"github.com/alfscherer/infra-observer/internal/inventory"
 	"github.com/alfscherer/infra-observer/internal/messaging"
 	"github.com/alfscherer/infra-observer/internal/secrets"
+	"github.com/alfscherer/infra-observer/internal/telemetry"
 )
 
 // cmdCollector runs the SNMP collector: poll devices, publish raw observations.
@@ -51,8 +53,10 @@ func cmdCollector(args []string) error {
 	}
 	defer client.Close()
 
+	m := telemetry.New()
+	serveObservability(ctx, cfg, log, m, health.NewChecker(version, natsCheck(client)))
 	sn := cfg.Collectors.SNMP
-	sched := &collector.Scheduler{
+	sched := &collector.Scheduler{OnPoll: m.OnPoll,
 		Devices: registry.List,
 		Poller: &snmp.Poller{
 			Dialer:   snmp.GoSNMPDialer{Timeout: sn.Timeout, Retries: sn.Retries, MaxRepetitions: uint32(sn.MaxRepetitions)},

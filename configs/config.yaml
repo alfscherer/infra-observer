@@ -63,6 +63,9 @@ api:
 secrets:
   dir: secrets
 
+observability:
+  listen: ":9090"      # /metrics, /healthz, /readyz, /health/dependencies
+
 scripts:
   transforms:
     normalize-cpu:

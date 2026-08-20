@@ -11,6 +11,7 @@ import (
 	"github.com/alfscherer/infra-observer/internal/config"
 	"github.com/alfscherer/infra-observer/internal/domain"
 	"github.com/alfscherer/infra-observer/internal/enrich"
+	"github.com/alfscherer/infra-observer/internal/health"
 	"github.com/alfscherer/infra-observer/internal/inventory"
 	"github.com/alfscherer/infra-observer/internal/messaging"
 	"github.com/alfscherer/infra-observer/internal/normalize"
@@ -21,6 +22,7 @@ import (
 	"github.com/alfscherer/infra-observer/internal/scripting/api"
 	"github.com/alfscherer/infra-observer/internal/scripting/runtime"
 	"github.com/alfscherer/infra-observer/internal/state"
+	"github.com/alfscherer/infra-observer/internal/telemetry"
 )
 
 // cmdProcessor runs the processing pipeline:
@@ -62,11 +64,13 @@ func cmdProcessor(args []string) error {
 		return err
 	}
 
+	m := telemetry.New()
 	store, err := connectDatabase(ctx, cfg, log, *migrate)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
+	store.OnError = m.DatabaseError
 	if err := store.UpsertDevices(ctx, devices); err != nil {
 		return err
 	}
@@ -76,6 +80,7 @@ func cmdProcessor(args []string) error {
 	}
 	defer client.Close()
 
+	checks := []health.Check{postgresCheck(store), natsCheck(client)}
 	proc := &pipeline.Processor{
 		Validator: schema.NewValidator(), Normalizer: norm, Enricher: enrich.Enricher{Inventory: registry},
 		States: defs, Rules: rs, Store: store, Log: log,
@@ -87,8 +92,11 @@ func cmdProcessor(args []string) error {
 		defer svc.Close()
 		log.Info("scripting enabled", "loaded", rep.Loaded, "failed", rep.Failed, "disabled", rep.Disabled)
 		proc.Ext = &scripting.Extensions{Svc: svc, Validator: proc.Validator, Log: log}
+		m.AttachScripting(svc)
+		checks = append(checks, scriptingCheck(svc))
 		go svc.Watch(ctx, 5*time.Second)
 	}
+	serveObservability(ctx, cfg, log, m, health.NewChecker(version, checks...))
 
 	var wg sync.WaitGroup
 	run := func(name string, fn func(context.Context) error) {
@@ -103,7 +111,7 @@ func cmdProcessor(args []string) error {
 	}
 
 	// Stage A: raw -> normalized.
-	optsA := workerOptions(cfg, log, "normalizer", messaging.StreamTelemetryRaw, "normalizer", messaging.SubjectRawPrefix+".>")
+	optsA := workerOptions(cfg, log, m, "normalizer", messaging.StreamTelemetryRaw, "normalizer", messaging.SubjectRawPrefix+".>")
 	stageA := client.NewWorker(optsA, func(ctx context.Context, m messaging.Message) error {
 		n, err := proc.NormalizeMessage(ctx, m.Data())
 		if err != nil {
@@ -117,7 +125,7 @@ func cmdProcessor(args []string) error {
 		})
 	})
 	// Stage B: normalized -> state, rules, persistence.
-	optsB := workerOptions(cfg, log, "processor", messaging.StreamTelemetryNormalized, "processor", messaging.SubjectNormalized)
+	optsB := workerOptions(cfg, log, m, "processor", messaging.StreamTelemetryNormalized, "processor", messaging.SubjectNormalized)
 	stageB := client.NewWorker(optsB, func(ctx context.Context, m messaging.Message) error {
 		obs, err := proc.Validator.DecodeObservation(m.Data())
 		if err != nil {
@@ -134,7 +142,7 @@ func cmdProcessor(args []string) error {
 		return nil
 	})
 	// Inventory facts (sysName, sysDescr...) observed by collectors.
-	optsI := workerOptions(cfg, log, "inventory", messaging.StreamInventory, "inventory", messaging.SubjectInventoryObserved)
+	optsI := workerOptions(cfg, log, m, "inventory", messaging.StreamInventory, "inventory", messaging.SubjectInventoryObserved)
 	inv := client.NewWorker(optsI, func(ctx context.Context, m messaging.Message) error {
 		f, err := schema.Decode[collector.InventoryFact](m.Data(), schema.DefaultLimits().MaxMessageBytes)
 		if err != nil {
@@ -160,7 +168,14 @@ func cmdProcessor(args []string) error {
 		}
 	}
 
-	relay := &pipeline.Relay{Store: store, Publisher: client, Log: log}
+	m.AttachWorker("normalizer", stageA)
+	m.AttachWorker("processor", stageB)
+	m.AttachWorker("inventory", inv)
+	go m.WatchBacklog(ctx, client, 5*time.Second,
+		telemetry.Consumer{Stream: optsA.Stream, Durable: optsA.Durable},
+		telemetry.Consumer{Stream: optsB.Stream, Durable: optsB.Durable},
+		telemetry.Consumer{Stream: optsI.Stream, Durable: optsI.Durable})
+	relay := &pipeline.Relay{Store: store, Publisher: client, Log: log, OnPublished: func(n int) { m.OutboxPublished.Add(float64(n)) }}
 	run("outbox-relay", func(ctx context.Context) error { relay.Run(ctx); return nil })
 	run("sweeper", func(ctx context.Context) error { sweepLoop(ctx, cfg, proc, registry, log); return nil })
 

@@ -263,3 +263,17 @@ func (c *Client) PublishBatch(ctx context.Context, msgs []OutMsg) error {
 	}
 	return nil
 }
+
+// ConsumerBacklog reports how many messages are waiting for a consumer and how
+// many it has been given but not yet acknowledged.
+func (c *Client) ConsumerBacklog(ctx context.Context, stream, durable string) (pending, ackPending uint64, err error) {
+	cons, err := c.js.Consumer(ctx, stream, durable)
+	if err != nil {
+		return 0, 0, domain.Wrap(domain.CategoryDependency, "consumer "+durable, err)
+	}
+	info, err := cons.Info(ctx)
+	if err != nil {
+		return 0, 0, domain.Wrap(domain.CategoryDependency, "consumer info "+durable, err)
+	}
+	return info.NumPending, uint64(info.NumAckPending), nil
+}

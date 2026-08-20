@@ -1,17 +1,26 @@
 package main
 
 import (
+	"context"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/alfscherer/infra-observer/internal/config"
+	"github.com/alfscherer/infra-observer/internal/domain"
+	"github.com/alfscherer/infra-observer/internal/health"
+	"github.com/alfscherer/infra-observer/internal/telemetry"
 )
 
 func TestWorkerOptionsFollowConfiguration(t *testing.T) {
 	cfg := config.Default()
 	cfg.Processing.Workers, cfg.Processing.QueueSize, cfg.Processing.MaxDeliver = 3, 7, 4
 	cfg.Processing.AckWait, cfg.Processing.RetryDelay = 9*time.Second, 300*time.Millisecond
-	o := workerOptions(cfg, nil, "n", "S", "d", "f.>")
+	o := workerOptions(cfg, nil, nil, "n", "S", "d", "f.>")
 	if o.Shards != 3 || o.QueueSize != 7 || o.MaxDeliver != 4 || o.AckWait != 9*time.Second || o.RetryDelay != 300*time.Millisecond ||
 		o.Stream != "S" || o.Durable != "d" || o.FilterSubject != "f.>" || o.KeyFunc == nil {
 		t.Fatalf("%+v", o)
@@ -28,4 +37,65 @@ func TestRunRejectsUnknownCommands(t *testing.T) {
 	if err := run([]string{"script"}); err == nil {
 		t.Fatal("script needs a subcommand")
 	}
+}
+
+func TestObservabilityServerExposesMetricsAndHealth(t *testing.T) {
+	cfg := config.Default()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+	cfg.Observability.Listen = addr
+
+	m := telemetry.New()
+	m.DatabaseError(domain.Errorf(domain.CategoryDependency, "x"))
+	healthy := true
+	checker := health.NewChecker("test",
+		health.Check{Name: "postgres", Critical: true, Fn: func(context.Context) health.Result {
+			if healthy {
+				return health.Result{Status: health.OK}
+			}
+			return health.Result{Status: health.Down, Detail: "connection refused"}
+		}})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	serveObservability(ctx, cfg, slog.New(slog.DiscardHandler), m, checker)
+
+	fetch := func(path string) (int, string) {
+		var lastErr error
+		for i := 0; i < 50; i++ {
+			resp, err := http.Get("http://" + addr + path)
+			if err == nil {
+				defer resp.Body.Close()
+				b, _ := io.ReadAll(resp.Body)
+				return resp.StatusCode, string(b)
+			}
+			lastErr = err
+			time.Sleep(20 * time.Millisecond)
+		}
+		t.Fatalf("listener never came up: %v", lastErr)
+		return 0, ""
+	}
+	if code, body := fetch("/metrics"); code != 200 || !strings.Contains(body, `database_errors_total{category="dependency"} 1`) {
+		t.Fatalf("%d %s", code, body)
+	}
+	if code, _ := fetch("/healthz"); code != 200 {
+		t.Fatal("liveness")
+	}
+	if code, _ := fetch("/readyz"); code != 200 {
+		t.Fatal("ready")
+	}
+	healthy = false
+	if code, body := fetch("/readyz"); code != 503 || !strings.Contains(body, "connection refused") {
+		t.Fatalf("a critical dependency failure must make readiness 503 with the reason: %d %s", code, body)
+	}
+	if code, _ := fetch("/healthz"); code != 200 {
+		t.Fatal("liveness must not depend on dependencies")
+	}
+
+	// an empty listen address disables the listener without error
+	cfg.Observability.Listen = ""
+	serveObservability(ctx, cfg, slog.New(slog.DiscardHandler), m, checker)
 }
