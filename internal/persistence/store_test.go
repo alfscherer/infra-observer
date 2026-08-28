@@ -32,6 +32,14 @@ func TestPGStoreAutomationContract(t *testing.T) {
 	})
 }
 
+func TestMemStoreReaderContract(t *testing.T) {
+	storetest.RunReader(t, func(*testing.T) storetest.ReaderStore { return persistence.NewMemStore() })
+}
+
+func TestPGStoreReaderContract(t *testing.T) {
+	storetest.RunReader(t, func(t *testing.T) storetest.ReaderStore { return newPG(t).(*persistence.PGStore) })
+}
+
 func newPG(t *testing.T) persistence.Store {
 	t.Helper()
 	pool := testutil.PostgresPool(t)

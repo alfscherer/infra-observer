@@ -51,6 +51,9 @@ type Metrics struct {
 	AutomationResults  *prometheus.CounterVec // policy, status
 	AutomationFailures *prometheus.CounterVec // policy
 
+	HTTPRequests *prometheus.CounterVec   // route, code
+	HTTPDuration *prometheus.HistogramVec // route
+
 	DatabaseErrors  *prometheus.CounterVec // category
 	OutboxPublished prometheus.Counter
 }
@@ -101,6 +104,9 @@ func New() *Metrics {
 	m.AutomationRequests = counter("automation_requests_total", "Automation requests recorded, by policy.", "policy")
 	m.AutomationResults = counter("automation_results_total", "Automation outcomes by policy and status.", "policy", "status")
 	m.AutomationFailures = counter("automation_failures_total", "Automation actions that failed while executing.", "policy")
+
+	m.HTTPRequests = counter("http_requests_total", "API requests by route pattern and status code.", "route", "code")
+	m.HTTPDuration = hist("http_request_duration_seconds", "API request duration by route pattern.", "route")
 
 	m.DatabaseErrors = counter("database_errors_total", "Database errors by category.", "category")
 	m.OutboxPublished = prometheus.NewCounter(prometheus.CounterOpts{Name: "outbox_published_total", Help: "Outbox messages published to NATS."})

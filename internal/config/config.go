@@ -121,6 +121,9 @@ type API struct {
 	Listen          string `yaml:"listen"`
 	DefaultPageSize int    `yaml:"default_page_size"`
 	MaxPageSize     int    `yaml:"max_page_size"`
+	// ApproversRef names a secret holding {"<bearer token>": "<approver identity>"}.
+	// Without it, POST /api/automation/{id}/approve is disabled.
+	ApproversRef string `yaml:"approvers_ref"`
 }
 
 type Secrets struct {

@@ -569,3 +569,156 @@ func (s *MemStore) AutomationRequests() []domain.AutomationRequest {
 	}
 	return out
 }
+
+// --- reader -------------------------------------------------------------------
+
+func (s *MemStore) DeviceStates(_ context.Context, deviceID string) ([]domain.StateRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []domain.StateRecord
+	for _, r := range s.states {
+		if r.DeviceID == deviceID {
+			out = append(out, r)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out, nil
+}
+
+// page applies keyset pagination to items already sorted newest-first.
+func pageOf[T any](items []T, key func(T) (time.Time, string), p Page) ([]T, string, error) {
+	ct, cid, err := DecodeCursor(p.Cursor)
+	if err != nil {
+		return nil, "", err
+	}
+	limit := clampLimit(p.Limit)
+	var out []T
+	for _, it := range items {
+		t, id := key(it)
+		if p.Cursor != "" && !(t.Before(ct) || (t.Equal(ct) && id < cid)) {
+			continue
+		}
+		out = append(out, it)
+		if len(out) == limit+1 {
+			break
+		}
+	}
+	next := ""
+	if len(out) > limit {
+		out = out[:limit]
+		t, id := key(out[len(out)-1])
+		next = EncodeCursor(t, id)
+	}
+	return out, next, nil
+}
+
+func (s *MemStore) ListEvents(_ context.Context, f EventFilter, p Page) ([]domain.Event, string, error) {
+	s.mu.Lock()
+	var all []domain.Event
+	for _, id := range s.evOrder {
+		e := s.events[id]
+		if (f.DeviceID != "" && e.DeviceID != f.DeviceID) || (f.Type != "" && e.Type != f.Type) ||
+			(f.MinSeverity != "" && e.Severity.Rank() < f.MinSeverity.Rank()) ||
+			(!f.Since.IsZero() && e.OccurredAt.Before(f.Since)) || (!f.Until.IsZero() && !e.OccurredAt.Before(f.Until)) {
+			continue
+		}
+		all = append(all, e)
+	}
+	s.mu.Unlock()
+	sort.SliceStable(all, func(i, j int) bool {
+		if !all[i].OccurredAt.Equal(all[j].OccurredAt) {
+			return all[i].OccurredAt.After(all[j].OccurredAt)
+		}
+		return all[i].EventID > all[j].EventID
+	})
+	return pageOf(all, func(e domain.Event) (time.Time, string) { return e.OccurredAt, e.EventID }, p)
+}
+
+func (s *MemStore) ListAlerts(_ context.Context, f AlertFilter, p Page) ([]domain.Alert, string, error) {
+	s.mu.Lock()
+	var all []domain.Alert
+	for _, a := range s.alerts {
+		if (f.Status != "" && a.Status != f.Status) || (f.DeviceID != "" && a.DeviceID != f.DeviceID) {
+			continue
+		}
+		all = append(all, a)
+	}
+	s.mu.Unlock()
+	sort.SliceStable(all, func(i, j int) bool {
+		if !all[i].OpenedAt.Equal(all[j].OpenedAt) {
+			return all[i].OpenedAt.After(all[j].OpenedAt)
+		}
+		return all[i].OpenEventID > all[j].OpenEventID
+	})
+	return pageOf(all, func(a domain.Alert) (time.Time, string) { return a.OpenedAt, a.OpenEventID }, p)
+}
+
+func (s *MemStore) ListAutomation(_ context.Context, f AutomationFilter, p Page) ([]AutomationView, string, error) {
+	s.mu.Lock()
+	var all []AutomationView
+	for _, id := range s.autoOrder {
+		r := s.autoReq[id]
+		if (f.Status != "" && r.Status != f.Status) || (f.DeviceID != "" && r.DeviceID != f.DeviceID) || (f.PolicyID != "" && r.PolicyID != f.PolicyID) {
+			continue
+		}
+		v := AutomationView{Request: *r}
+		if res, ok := s.autoRes[id]; ok {
+			c := res
+			v.Result = &c
+		}
+		all = append(all, v)
+	}
+	s.mu.Unlock()
+	sort.SliceStable(all, func(i, j int) bool {
+		if !all[i].Request.CreatedAt.Equal(all[j].Request.CreatedAt) {
+			return all[i].Request.CreatedAt.After(all[j].Request.CreatedAt)
+		}
+		return all[i].Request.RequestID > all[j].Request.RequestID
+	})
+	return pageOf(all, func(v AutomationView) (time.Time, string) { return v.Request.CreatedAt, v.Request.RequestID }, p)
+}
+
+func (s *MemStore) Metrics(_ context.Context, deviceID, metric string, since, until time.Time, limit int) ([]MetricPoint, error) {
+	s.mu.Lock()
+	var all []MetricPoint
+	for _, id := range s.obsOrder {
+		o := s.observation[id]
+		if o.DeviceID != deviceID || o.Metric != metric || (!since.IsZero() && o.ObservedAt.Before(since)) || (!until.IsZero() && !o.ObservedAt.Before(until)) {
+			continue
+		}
+		all = append(all, MetricPoint{ObservationID: o.ObservationID, Metric: o.Metric, Value: o.Value, Labels: o.Labels, ObservedAt: o.ObservedAt})
+	}
+	s.mu.Unlock()
+	sort.SliceStable(all, func(i, j int) bool { return all[i].ObservedAt.After(all[j].ObservedAt) })
+	if n := clampLimit(limit); len(all) > n {
+		all = all[:n]
+	}
+	return all, nil
+}
+
+func (s *MemStore) LatestMetrics(_ context.Context, deviceID string) ([]MetricPoint, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	best := map[string]MetricPoint{}
+	for _, id := range s.obsOrder {
+		o := s.observation[id]
+		if o.DeviceID != deviceID {
+			continue
+		}
+		k := o.Metric + "|" + domain.LabelsKey(o.Labels)
+		if cur, ok := best[k]; !ok || o.ObservedAt.After(cur.ObservedAt) {
+			best[k] = MetricPoint{ObservationID: o.ObservationID, Metric: o.Metric, Value: o.Value, Labels: o.Labels, ObservedAt: o.ObservedAt}
+		}
+	}
+	out := make([]MetricPoint, 0, len(best))
+	for _, p := range best {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Metric != out[j].Metric {
+			return out[i].Metric < out[j].Metric
+		}
+		return domain.LabelsKey(out[i].Labels) < domain.LabelsKey(out[j].Labels)
+	})
+	return out, nil
+}

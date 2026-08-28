@@ -41,6 +41,8 @@ func run(args []string) error {
 		return cmdScenario(rest)
 	case "script":
 		return cmdScript(rest)
+	case "api":
+		return cmdAPI(rest)
 	case "processor":
 		return cmdProcessor(rest)
 	case "automation-worker":
@@ -65,6 +67,7 @@ commands:
   migrate             apply pending database migrations
   collector           poll devices and publish raw observations
   simulator           run the simulated lab (SNMP agents + scenario control)
+  api                 serve the REST API
   processor           run the processing pipeline (normalize, enrich, state, rules, persist)
   automation-worker   react to alerts: policies, proposals, integrations, adapters
   scenario            apply a scenario to the running simulator
