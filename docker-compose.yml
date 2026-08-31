@@ -1,0 +1,124 @@
+# A small, production-shaped stack for evaluating infra-observer locally:
+# NATS (JetStream), PostgreSQL, the platform processes (one image, different
+# commands) and a simulated lab. Compose is a convenient way to run it here;
+# it is not a production deployment story. See OPERATIONS.md for systemd and
+# scheduler guidance.
+name: infra-observer
+
+x-app: &app
+  build:
+    context: .
+    args:
+      VERSION: ${VERSION:-dev}
+  image: infra-observer:local
+  restart: unless-stopped
+  environment: &env
+    INFRA_OBSERVER_NATS_URL: nats://nats:4222
+    INFRA_OBSERVER_DATABASE_URL: postgres://observer:observer@postgres:5432/observer?sslmode=disable
+    INFRA_OBSERVER_LOGGING_FORMAT: json
+    INFRA_OBSERVER_LOGGING_LEVEL: ${LOG_LEVEL:-info}
+    # Lab-only credentials, resolved by reference (see secrets.example/). In a
+    # real deployment these come from a secret store, never from this file.
+    INFRA_OBSERVER_SECRET_SNMP_LAB: '{"version":"2c","community":"lab-ro"}'
+    INFRA_OBSERVER_SECRET_ENDPOINTS_ALERTS_WEBHOOK: '{"url":"http://webhook:8090","token":"lab-token"}'
+    INFRA_OBSERVER_SECRET_API_APPROVERS: '{"lab-approver-token":"lab-operator"}'
+    INFRA_OBSERVER_API_APPROVERS_REF: api/approvers
+    # Automation stays in dry-run unless you deliberately flip this AND the policy.
+    INFRA_OBSERVER_AUTOMATION_DEFAULT_DRY_RUN: ${AUTOMATION_DRY_RUN:-true}
+
+services:
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports: ["4222:4222", "8222:8222"]
+    volumes: ["nats-data:/data"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8222/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: observer
+      POSTGRES_PASSWORD: observer
+      POSTGRES_DB: observer
+    ports: ["15432:5432"]
+    volumes: ["pg-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U observer -d observer"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # One-shot: apply database migrations, then exit. Everything that needs the
+  # schema waits for it to finish.
+  migrate:
+    <<: *app
+    command: ["migrate"]
+    restart: "no"
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  webhook:
+    <<: *app
+    command: ["webhook-sink"]
+    environment:
+      <<: *env
+      INFRA_OBSERVER_WEBHOOK_TOKEN: lab-token
+    ports: ["8090:8090"]
+
+  simulator:
+    <<: *app
+    command: ["simulator"]
+    depends_on:
+      nats: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  collector:
+    <<: *app
+    command: ["collector"]
+    ports: ["9092:9090"]
+    depends_on:
+      nats: {condition: service_healthy}
+      simulator: {condition: service_healthy}
+
+  processor:
+    <<: *app
+    command: ["processor"]
+    ports: ["9091:9090"]
+    depends_on:
+      nats: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+
+  automation:
+    <<: *app
+    command: ["automation-worker"]
+    ports: ["9093:9090"]
+    depends_on:
+      nats: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+      simulator: {condition: service_healthy}
+
+  api:
+    <<: *app
+    command: ["api"]
+    ports: ["8080:8080"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/api/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+
+volumes:
+  nats-data:
+  pg-data:

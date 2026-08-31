@@ -7,7 +7,7 @@ BIN     := bin/infra-observer
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: help setup build test lint fmt check clean integration-test migrate scenario test-scripts validate-scripts
+.PHONY: help setup build test lint fmt check clean integration-test migrate scenario test-scripts validate-scripts run stop reset logs ps smoke
 
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -51,6 +51,26 @@ clean:
 validate-config: build ## validate configuration and inventory
 	$(BIN) config validate --config configs/config.yaml
 
+COMPOSE ?= docker compose
+
+run: ## build images and start the whole stack (NATS, PostgreSQL, platform, simulated lab)
+	$(COMPOSE) up -d --build
+	@echo "api:       http://localhost:8080/api/devices"
+	@echo "webhook:   http://localhost:8090/v1/received"
+	@echo "metrics:   http://localhost:9091/metrics (processor)"
+
+stop: ## stop the stack, keeping data
+	$(COMPOSE) down
+
+reset: ## stop the stack and delete all data (volumes)
+	$(COMPOSE) down -v --remove-orphans
+
+logs: ## follow logs of every service (SERVICE=processor to pick one)
+	$(COMPOSE) logs -f --tail=100 $(SERVICE)
+
+ps: ## service status
+	$(COMPOSE) ps
+
 # make scenario DEVICE=switch-01 EVENT=interface-flap [ARGS="--arg interface=Gi0/2 --duration 5m"]
 scenario: build ## apply a simulator scenario: DEVICE=... EVENT=... [ARGS=...]
-	$(BIN) scenario --config configs/config.yaml --device "$(DEVICE)" --event "$(EVENT)" $(ARGS)
+	INFRA_OBSERVER_NATS_URL=$${INFRA_OBSERVER_NATS_URL:-nats://localhost:4222} $(BIN) scenario --config configs/config.yaml --device "$(DEVICE)" --event "$(EVENT)" $(ARGS)

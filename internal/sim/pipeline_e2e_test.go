@@ -42,7 +42,9 @@ func (s pipeSink) Observations(ctx context.Context, obs []domain.Observation) er
 		}
 		n, err := s.p.NormalizeMessage(ctx, payload)
 		if err != nil {
-			s.t.Errorf("stage A rejected %s: %v", o.Metric, err)
+			if ctx.Err() == nil { // an error caused by the test shutting down is not a pipeline failure
+				s.t.Errorf("stage A rejected %s: %v", o.Metric, err)
+			}
 			continue
 		}
 		if _, err := s.p.Process(ctx, n.Observation); err != nil && ctx.Err() == nil {

@@ -43,6 +43,8 @@ func run(args []string) error {
 		return cmdScript(rest)
 	case "api":
 		return cmdAPI(rest)
+	case "webhook-sink":
+		return cmdWebhookSink(rest)
 	case "processor":
 		return cmdProcessor(rest)
 	case "automation-worker":
@@ -68,6 +70,7 @@ commands:
   collector           poll devices and publish raw observations
   simulator           run the simulated lab (SNMP agents + scenario control)
   api                 serve the REST API
+  webhook-sink        lab receiver for webhooks (used by the compose stack)
   processor           run the processing pipeline (normalize, enrich, state, rules, persist)
   automation-worker   react to alerts: policies, proposals, integrations, adapters
   scenario            apply a scenario to the running simulator

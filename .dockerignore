@@ -1,0 +1,7 @@
+.git
+.local
+bin
+dist
+secrets
+*.test
+docs
