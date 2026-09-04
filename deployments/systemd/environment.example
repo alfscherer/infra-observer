@@ -1,0 +1,20 @@
+# /etc/infra-observer/environment  (mode 0640, root:observer)
+#
+# systemd EnvironmentFile syntax: KEY=VALUE, no shell expansion. Any setting in
+# config.yaml can be overridden as INFRA_OBSERVER_<SECTION>_<KEY>.
+
+INFRA_OBSERVER_NATS_URL=nats://127.0.0.1:4222
+# Use sslmode=verify-full with a real CA in production.
+INFRA_OBSERVER_DATABASE_URL=postgres://observer:CHANGE_ME@127.0.0.1:5432/observer?sslmode=require
+
+# Credential references (snmp/lab, endpoints/alerts-webhook, api/approvers...)
+# resolve to <dir>/<ref>.json. Keep this directory 0700, owned by observer, and
+# fill it from your secret manager; see OPERATIONS.md ("Secrets").
+INFRA_OBSERVER_SECRETS_DIR=/etc/infra-observer/secrets
+
+INFRA_OBSERVER_LOGGING_FORMAT=json
+INFRA_OBSERVER_LOGGING_LEVEL=info
+
+# Automation stays in dry-run until BOTH this is false and a policy says so.
+INFRA_OBSERVER_AUTOMATION_DEFAULT_DRY_RUN=true
+INFRA_OBSERVER_API_APPROVERS_REF=api/approvers

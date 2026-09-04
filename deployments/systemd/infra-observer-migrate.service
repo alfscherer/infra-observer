@@ -1,0 +1,26 @@
+# One-shot database migration. deploy.sh runs migrations itself, with the NEW
+# release, before switching; use this unit for a first install or by hand:
+#
+#   systemctl start infra-observer-migrate.service
+#
+# Migrations are idempotent and serialised with an advisory lock, so running
+# this twice, or from two hosts at once, is harmless.
+[Unit]
+Description=infra-observer database migrations
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+User=observer
+Group=observer
+WorkingDirectory=/opt/infra-observer/current
+EnvironmentFile=/etc/infra-observer/environment
+ExecStart=/opt/infra-observer/current/bin/infra-observer migrate --config /opt/infra-observer/current/configs/config.yaml
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=

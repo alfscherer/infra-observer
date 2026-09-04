@@ -1,0 +1,6 @@
+[Unit]
+Description=infra-observer platform (collector, processor, automation worker, API)
+Wants=infra-observer@collector.service infra-observer@processor.service infra-observer@automation-worker.service infra-observer@api.service
+
+[Install]
+WantedBy=multi-user.target

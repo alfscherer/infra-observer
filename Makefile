@@ -7,7 +7,7 @@ BIN     := bin/infra-observer
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: help setup build test lint fmt check clean integration-test migrate scenario test-scripts validate-scripts run stop reset logs ps smoke
+.PHONY: help setup build test lint fmt check clean integration-test migrate scenario test-scripts validate-scripts run stop reset logs ps smoke package validate deploy rollback test-deploy
 
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -42,7 +42,26 @@ test-scripts: build ## run every JavaScript extension against its fixtures
 validate-scripts: build ## load all scripts as a service would; fail if any is broken
 	$(BIN) script validate --config configs/config.yaml
 
-check: lint test test-scripts ## everything a change must pass before commit
+package: ## build a release tarball into dist/ (VERSION, GOOS, GOARCH override)
+	VERSION=$(VERSION) ./deployments/scripts/package.sh
+
+validate: build ## validate configuration and JavaScript extensions
+	./deployments/scripts/validate.sh
+
+# make deploy PACKAGE=dist/infra-observer-<v>-linux-amd64.tar.gz [HOST=user@server] [PREFIX=/opt/infra-observer]
+deploy: ## deploy a package (see deployments/scripts/deploy.sh --help)
+	./deployments/scripts/deploy.sh --package "$(PACKAGE)" $(if $(HOST),--host $(HOST)) $(if $(PREFIX),--prefix $(PREFIX)) $(DEPLOY_ARGS)
+
+rollback: ## roll back to the previous release
+	./deployments/scripts/rollback.sh $(if $(PREFIX),--prefix $(PREFIX)) $(ROLLBACK_ARGS)
+
+smoke: ## smoke test a running deployment through its API (API=http://host:8080)
+	./deployments/scripts/smoke.sh $(if $(API),--api $(API))
+
+test-deploy: ## exercise the deployment scripts in a temp prefix (no root, no systemd)
+	./deployments/scripts/test-deploy.sh
+
+check: lint test test-scripts test-deploy ## everything a change must pass before commit
 
 clean:
 	rm -rf bin dist

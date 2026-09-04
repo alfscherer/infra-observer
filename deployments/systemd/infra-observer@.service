@@ -1,0 +1,67 @@
+# Template unit: one instance per role.
+#
+#   systemctl enable --now infra-observer@collector infra-observer@processor \
+#                          infra-observer@automation-worker infra-observer@api
+#
+# The instance name is the infra-observer subcommand. The `current` symlink is
+# switched by deployments/scripts/deploy.sh; restarting a unit picks up the new
+# release.
+[Unit]
+Description=infra-observer %i
+Documentation=https://example.invalid/infra-observer/OPERATIONS.md
+After=network-online.target
+Wants=network-online.target
+PartOf=infra-observer.target
+# PostgreSQL and NATS are usually separate units whose names differ per
+# distribution, so ordering is not enforced here. Every role retries its
+# connections at startup (up to two minutes) and reports "unready" until they
+# are reachable, so start order is not a correctness matter.
+
+[Service]
+Type=simple
+User=observer
+Group=observer
+WorkingDirectory=/opt/infra-observer/current
+# Database URL, NATS URL, secrets directory and overrides. Mode 0640 root:observer.
+EnvironmentFile=/etc/infra-observer/environment
+ExecStart=/opt/infra-observer/current/bin/infra-observer %i --config /opt/infra-observer/current/configs/config.yaml
+
+Restart=on-failure
+RestartSec=3
+# Workers stop fetching, finish in-flight handlers (up to 30s) and hand queued
+# messages back to JetStream. Give them room to do that before SIGKILL.
+TimeoutStopSec=45
+
+# Keep the Go heap below the cgroup limit so the GC works before the OOM killer does.
+Environment=GOMEMLIMIT=700MiB
+MemoryHigh=768M
+MemoryMax=1G
+LimitNOFILE=65536
+
+# Hardening: this process talks to the network and reads its own files, nothing more.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+ReadOnlyPaths=/etc/infra-observer /opt/infra-observer
+
+[Install]
+WantedBy=infra-observer.target
