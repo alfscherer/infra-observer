@@ -7,7 +7,7 @@ BIN     := bin/infra-observer
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: help setup build test lint fmt check clean integration-test migrate scenario test-scripts validate-scripts run stop reset logs ps smoke package validate deploy rollback test-deploy
+.PHONY: help setup build test lint fmt check clean integration-test migrate scenario test-scripts validate-scripts run stop reset logs ps smoke package validate deploy rollback test-deploy fail heal inject fault-script fault-script-clear dlq e2e
 
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -72,7 +72,10 @@ validate-config: build ## validate configuration and inventory
 
 COMPOSE ?= docker compose
 
+LAB_SCRIPTS := .lab/scripts
+
 run: ## build images and start the whole stack (NATS, PostgreSQL, platform, simulated lab)
+	@mkdir -p $(LAB_SCRIPTS)/transforms
 	$(COMPOSE) up -d --build
 	@echo "api:       http://localhost:8080/api/devices"
 	@echo "webhook:   http://localhost:8090/v1/received"
@@ -93,3 +96,28 @@ ps: ## service status
 # make scenario DEVICE=switch-01 EVENT=interface-flap [ARGS="--arg interface=Gi0/2 --duration 5m"]
 scenario: build ## apply a simulator scenario: DEVICE=... EVENT=... [ARGS=...]
 	INFRA_OBSERVER_NATS_URL=$${INFRA_OBSERVER_NATS_URL:-nats://localhost:4222} $(BIN) scenario --config configs/config.yaml --device "$(DEVICE)" --event "$(EVENT)" $(ARGS)
+
+# ---- failure injection (compose lab) ------------------------------------------
+fail: ## inject a failure: COMPONENT=database|nats|processor|... [MODE=stop|kill|pause]
+	./hack/fail.sh fail "$(COMPONENT)" $(MODE)
+
+heal: ## undo `make fail`: COMPONENT=...
+	./hack/fail.sh heal "$(COMPONENT)"
+
+inject: build ## publish hostile telemetry: KIND=malformed|poison|unknown-device|future|duplicate [COUNT=n]
+	INFRA_OBSERVER_NATS_URL=$${INFRA_OBSERVER_NATS_URL:-nats://localhost:4222} $(BIN) inject --config configs/config.yaml --kind "$(KIND)" $(if $(COUNT),--count $(COUNT)) $(if $(DEVICE),--device $(DEVICE))
+
+# make fault-script SCRIPT=throws|spins|invalid-output|slow  (hot-loaded within ~5s)
+fault-script: ## drop a faulty JavaScript extension into the running lab
+	@mkdir -p $(LAB_SCRIPTS)/transforms
+	cp testdata/faulty-scripts/transforms/$(SCRIPT).js $(LAB_SCRIPTS)/transforms/fault-$(SCRIPT).js
+	@echo "loaded within ~5s. Watch: curl -s localhost:9091/health/dependencies; make logs SERVICE=processor"
+
+fault-script-clear: ## remove every injected faulty extension
+	rm -f $(LAB_SCRIPTS)/transforms/fault-*.js
+
+dlq: build ## list dead-lettered messages (add ARGS="replay --all" or "purge")
+	INFRA_OBSERVER_NATS_URL=$${INFRA_OBSERVER_NATS_URL:-nats://localhost:4222} $(BIN) deadletter $(or $(ARGS),list) --config configs/config.yaml
+
+e2e: ## run the end-to-end tests (needs docker for PostgreSQL)
+	./hack/integration-test.sh ./internal/e2e/...

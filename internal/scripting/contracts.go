@@ -89,14 +89,14 @@ func (e *Extensions) Transform(ctx context.Context, obs domain.Observation) (dom
 // validates.
 func (e *Extensions) RunTransform(ctx context.Context, sc registry.Script, obs domain.Observation) (domain.Observation, bool, error) {
 	call := api.NewCall(info(sc), obs.CorrelationID, obs.ObservationID, obs.DeviceID)
-	raw, err := e.Svc.Call(ctx, sc.Key, "transform", call, obs)
+	var next domain.Observation
+	var keep bool
+	_, err := e.Svc.CallChecked(ctx, sc.Key, "transform", call, func(raw json.RawMessage) (verr error) {
+		next, keep, verr = e.decodeTransform(obs, raw)
+		return verr
+	}, obs)
 	if err != nil {
 		return obs, true, err
-	}
-	next, keep, verr := e.decodeTransform(obs, raw)
-	if verr != nil {
-		e.Svc.Failed(sc.Key, verr)
-		return obs, true, verr
 	}
 	return next, keep, nil
 }
@@ -158,14 +158,13 @@ func (e *Extensions) Enrich(ctx context.Context, obs domain.Observation, dev dom
 // RunEnrich invokes one enricher and validates its result; see RunTransform.
 func (e *Extensions) RunEnrich(ctx context.Context, sc registry.Script, obs domain.Observation, dev domain.Device) (domain.Observation, error) {
 	call := api.NewCall(info(sc), obs.CorrelationID, obs.ObservationID, obs.DeviceID)
-	raw, err := e.Svc.Call(ctx, sc.Key, "enrich", call, obs, map[string]any{"device": api.ViewOf(dev)})
+	var next domain.Observation
+	_, err := e.Svc.CallChecked(ctx, sc.Key, "enrich", call, func(raw json.RawMessage) (verr error) {
+		next, verr = e.decodeEnrich(obs, raw)
+		return verr
+	}, obs, map[string]any{"device": api.ViewOf(dev)})
 	if err != nil {
 		return obs, err
-	}
-	next, verr := e.decodeEnrich(obs, raw)
-	if verr != nil {
-		e.Svc.Failed(sc.Key, verr)
-		return obs, verr
 	}
 	return next, nil
 }

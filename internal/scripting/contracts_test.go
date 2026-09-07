@@ -249,3 +249,60 @@ func TestMetricMatching(t *testing.T) {
 		}
 	}
 }
+
+// Regression: a script that runs without error but always returns something the
+// contract rejects used to alternate "success" (the call) and "failure" (the
+// validation) in its bookkeeping, so its failure streak never reached the
+// quarantine threshold and it was never taken out of service.
+func TestScriptThatAlwaysReturnsInvalidOutputIsQuarantined(t *testing.T) {
+	dir := t.TempDir()
+	writeScript(t, dir, "transforms", "garbage", meta(`["m.x"]`)+"export function transform(o) { return {metric: 42} }\n")
+	cfg := config.Default().Scripting
+	cfg.Directories, cfg.QuarantineAfter, cfg.ExecutionTimeout = []string{dir}, 3, 100*time.Millisecond
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc, _ := New(cfg, nil, nil, log)
+	defer svc.Close()
+	ext := &Extensions{Svc: svc, Validator: schema.NewValidator(), Log: log}
+
+	for i := 0; i < 3; i++ {
+		out, keep, err := ext.Transform(context.Background(), obs("m.x", 1.0))
+		if err != nil || !keep || out.Value != 1.0 {
+			t.Fatalf("the observation continues unchanged: %+v %v %v", out, keep, err)
+		}
+	}
+	s, _ := svc.Registry.Get("transforms/garbage")
+	if s.Status != registry.StatusQuarantined {
+		t.Fatalf("three consecutive contract violations must quarantine the script: %+v", s)
+	}
+	if s.TotalCalls != 3 || s.TotalFailures != 3 {
+		t.Fatalf("each invocation is recorded exactly once (calls=%d failures=%d)", s.TotalCalls, s.TotalFailures)
+	}
+}
+
+func TestContractViolationDoesNotResetTheFailureStreak(t *testing.T) {
+	dir := t.TempDir()
+	// fails validation for x=bad, otherwise fine
+	writeScript(t, dir, "transforms", "picky", meta(`["m.x"]`)+"export function transform(o) { return o.labels.interface === 'bad' ? {metric: 1} : o }\n")
+	cfg := config.Default().Scripting
+	cfg.Directories, cfg.QuarantineAfter = []string{dir}, 3
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc, _ := New(cfg, nil, nil, log)
+	defer svc.Close()
+	ext := &Extensions{Svc: svc, Validator: schema.NewValidator(), Log: log}
+	bad, good := obs("m.x", 1.0), obs("m.x", 1.0)
+	bad.Labels = map[string]string{"interface": "bad"}
+	for i := 0; i < 2; i++ {
+		_, _, _ = ext.Transform(context.Background(), bad)
+	}
+	_, _, _ = ext.Transform(context.Background(), good) // a genuine success resets the streak
+	for i := 0; i < 2; i++ {
+		_, _, _ = ext.Transform(context.Background(), bad)
+	}
+	if s, _ := svc.Registry.Get("transforms/picky"); s.Status != registry.StatusActive || s.ConsecutiveFailures != 2 {
+		t.Fatalf("2+success+2 is not 3 in a row: %+v", s)
+	}
+	_, _, _ = ext.Transform(context.Background(), bad)
+	if s, _ := svc.Registry.Get("transforms/picky"); s.Status != registry.StatusQuarantined {
+		t.Fatalf("%+v", s)
+	}
+}

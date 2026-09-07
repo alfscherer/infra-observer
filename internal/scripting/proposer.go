@@ -34,21 +34,22 @@ func (e *Extensions) Propose(ctx context.Context, pol automation.Policy, ev doma
 // RunPropose invokes one automation script and decodes its proposal.
 func (e *Extensions) RunPropose(ctx context.Context, sc registry.Script, policyID string, allowed []string, ev domain.Event, dev domain.Device) (*automation.Proposal, error) {
 	call := api.NewCall(info(sc), ev.CorrelationID, ev.EventID, ev.DeviceID)
-	raw, err := e.Svc.Call(ctx, sc.Key, "proposeAutomation", call, ev, api.ViewOf(dev),
-		map[string]any{"policy_id": policyID, "allowed_actions": allowed})
+	var prop *automation.Proposal
+	_, err := e.Svc.CallChecked(ctx, sc.Key, "proposeAutomation", call, func(raw json.RawMessage) error {
+		if string(raw) == "null" {
+			return nil
+		}
+		p, err := schema.Decode[automation.Proposal](raw, 16<<10)
+		if err != nil {
+			return scriptOutputError(sc.ID, "returned something that is not a proposal (want {action, target?, params?, reason?} or null): %v", err)
+		}
+		prop = &p
+		return nil
+	}, ev, api.ViewOf(dev), map[string]any{"policy_id": policyID, "allowed_actions": allowed})
 	if err != nil {
 		return nil, err
 	}
-	if string(raw) == "null" {
-		return nil, nil
-	}
-	prop, err := schema.Decode[automation.Proposal](raw, 16<<10)
-	if err != nil {
-		verr := scriptOutputError(sc.ID, "returned something that is not a proposal (want {action, target?, params?, reason?} or null): %v", err)
-		e.Svc.Failed(sc.Key, verr)
-		return nil, verr
-	}
-	return &prop, nil
+	return prop, nil
 }
 
 // IntegrationResult is what handleEvent returns.
@@ -68,15 +69,17 @@ type IntegrationOutcome struct {
 // RunHandle invokes one integration script for an event.
 func (e *Extensions) RunHandle(ctx context.Context, sc registry.Script, ev domain.Event, dev domain.Device) (IntegrationResult, []domain.Event, error) {
 	call := api.NewCall(info(sc), ev.CorrelationID, ev.EventID, ev.DeviceID)
-	raw, err := e.Svc.Call(ctx, sc.Key, "handleEvent", call, ev, map[string]any{"device": api.ViewOf(dev)})
+	var res IntegrationResult
+	_, err := e.Svc.CallChecked(ctx, sc.Key, "handleEvent", call, func(raw json.RawMessage) error {
+		r, derr := schema.Decode[IntegrationResult](raw, 16<<10)
+		if derr != nil || string(raw) == "null" {
+			return scriptOutputError(sc.ID, "must return {ok: boolean, message?: string}")
+		}
+		res = r
+		return nil
+	}, ev, map[string]any{"device": api.ViewOf(dev)})
 	if err != nil {
 		return IntegrationResult{}, nil, err
-	}
-	res, derr := schema.Decode[IntegrationResult](raw, 16<<10)
-	if derr != nil || string(json.RawMessage(raw)) == "null" {
-		verr := scriptOutputError(sc.ID, "must return {ok: boolean, message?: string}")
-		e.Svc.Failed(sc.Key, verr)
-		return IntegrationResult{}, nil, verr
 	}
 	return res, call.Events(), nil
 }

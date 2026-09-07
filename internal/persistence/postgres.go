@@ -516,3 +516,14 @@ func (s *PGStore) DrainOutbox(ctx context.Context, limit int, publish func(conte
 func (s *PGStore) String() string {
 	return fmt.Sprintf("postgres(max_conns=%d)", s.pool.Config().MaxConns)
 }
+
+// CountForTest runs a COUNT(*)-style query. It exists so integration tests can
+// assert on table contents without the store growing a query API it does not
+// otherwise need.
+func (s *PGStore) CountForTest(ctx context.Context, query string, args ...any) (int, error) {
+	var n int
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}

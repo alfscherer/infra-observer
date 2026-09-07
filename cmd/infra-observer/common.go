@@ -2,42 +2,13 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/alfscherer/infra-observer/internal/config"
-	"github.com/alfscherer/infra-observer/internal/messaging"
 	"github.com/alfscherer/infra-observer/internal/persistence"
-	"github.com/alfscherer/infra-observer/internal/telemetry"
 )
-
-// deviceKey routes a message to a worker shard by device, so messages about
-// one device are handled in order while different devices run in parallel.
-func deviceKey(m messaging.Message) string {
-	var p struct {
-		DeviceID string `json:"device_id"`
-	}
-	if json.Unmarshal(m.Data(), &p) == nil && p.DeviceID != "" {
-		return p.DeviceID
-	}
-	return m.Subject()
-}
-
-// workerOptions builds worker settings from configuration.
-func workerOptions(cfg config.Config, log *slog.Logger, m *telemetry.Metrics, name, stream, durable, filter string) messaging.WorkerOptions {
-	p := cfg.Processing
-	o := messaging.WorkerOptions{
-		Name: name, Stream: stream, Durable: durable, FilterSubject: filter,
-		Shards: p.Workers, QueueSize: p.QueueSize, MaxDeliver: p.MaxDeliver, AckWait: p.AckWait, RetryDelay: p.RetryDelay,
-		KeyFunc: deviceKey, Log: log,
-	}
-	if m != nil {
-		o.OnOutcome = m.WorkerOutcome(name)
-	}
-	return o
-}
 
 // connectDatabase opens PostgreSQL, retrying while it is not yet reachable so
 // processes can start in any order. It optionally applies migrations.

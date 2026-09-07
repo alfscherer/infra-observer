@@ -149,23 +149,34 @@ func (s *Service) signature() string {
 }
 
 // Call invokes fn of the script identified by key (kind/id). data is opaque
-// per-call context for host functions. Failures of the script (exceptions,
-// deadlines, panics, bad output) count toward quarantine; platform conditions
-// such as saturation or cancellation do not.
+// per-call context for host functions. The outcome is recorded once: failures
+// of the script (exceptions, deadlines, panics) count toward quarantine, while
+// platform conditions such as saturation or cancellation do not.
+//
+// Use CallChecked when the result must also satisfy a contract.
 func (s *Service) Call(ctx context.Context, key, fn string, data any, args ...any) (json.RawMessage, error) {
+	return s.CallChecked(ctx, key, fn, data, nil, args...)
+}
+
+// CallChecked is Call plus a contract check on the result. The invocation is
+// recorded exactly once, after the check: a script that runs fine but returns
+// something the contract rejects has failed, and consecutive such failures must
+// reach the quarantine threshold. (Recording the run as a success first and the
+// violation separately afterwards would reset the failure streak every time and
+// a script that always returns garbage would never be quarantined.)
+func (s *Service) CallChecked(ctx context.Context, key, fn string, data any, check func(json.RawMessage) error, args ...any) (json.RawMessage, error) {
 	sc, ok := s.Registry.Get(key)
 	if !ok || sc.Status != registry.StatusActive {
 		return nil, fmt.Errorf("%w: %s", ErrNotActive, key)
 	}
 	start := time.Now()
 	out, err := s.Pool.Call(ctx, sc.Program.ID, fn, data, args...)
+	if err == nil && check != nil {
+		err = check(out)
+	}
 	s.finish(key, time.Since(start), err)
 	return out, err
 }
-
-// Failed lets a caller report that a script's *result* was invalid (it ran,
-// but returned something the contract rejects). That is a script failure too.
-func (s *Service) Failed(key string, err error) { s.finish(key, 0, err) }
 
 func (s *Service) finish(key string, d time.Duration, err error) {
 	if s.OnResult != nil {

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"time"
 
+	"github.com/alfscherer/infra-observer/internal/app"
 	"github.com/alfscherer/infra-observer/internal/automation"
 	"github.com/alfscherer/infra-observer/internal/automation/adapters"
 	"github.com/alfscherer/infra-observer/internal/collector/snmp"
@@ -12,7 +13,6 @@ import (
 	"github.com/alfscherer/infra-observer/internal/domain"
 	"github.com/alfscherer/infra-observer/internal/health"
 	"github.com/alfscherer/infra-observer/internal/inventory"
-	"github.com/alfscherer/infra-observer/internal/messaging"
 	"github.com/alfscherer/infra-observer/internal/pipeline"
 	"github.com/alfscherer/infra-observer/internal/schema"
 	"github.com/alfscherer/infra-observer/internal/scripting"
@@ -109,40 +109,15 @@ func cmdAutomationWorker(args []string) error {
 		handler.Integrations = runner
 	}
 
-	opts := workerOptions(cfg, log, m, "automation", messaging.StreamEvents, "automation", messaging.SubjectEventAlert)
-	worker := client.NewWorker(opts, func(ctx context.Context, msg messaging.Message) error { return handler.Handle(ctx, msg.Data()) })
-	m.AttachWorker("automation", worker)
 	serveObservability(ctx, cfg, log, m, health.NewChecker(version, checks...))
-	go m.WatchBacklog(ctx, client, 5*time.Second, telemetry.Consumer{Stream: opts.Stream, Durable: opts.Durable})
-
-	go func() {
-		relay := &pipeline.Relay{Store: store, Publisher: client, Log: log, OnPublished: func(n int) { m.OutboxPublished.Add(float64(n)) }}
-		relay.Run(ctx)
-	}()
-	go func() {
-		t := time.NewTicker(cfg.Automation.TickInterval)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				if _, err := engine.Tick(ctx); err != nil && ctx.Err() == nil {
-					log.Warn("automation tick failed; will retry", "error", err)
-				}
-			}
-		}
-	}()
-	if err := client.WatchMaxDeliveries(ctx, messaging.StreamEvents, "automation", ""); err != nil {
-		return err
-	}
+	a := &app.Automation{Cfg: cfg, Log: log, Client: client, Store: store, Engine: engine, Handler: handler, Metrics: m}
 	log.Info("automation worker started", "default_dry_run", cfg.Automation.DefaultDryRun, "policies", len(policies.All()))
 	if cfg.Automation.DefaultDryRun {
 		log.Info("automation is in DRY-RUN mode: no action will change any device")
 	} else {
 		log.Warn("automation is LIVE: policies that set dry_run: false will mutate allowlisted devices")
 	}
-	err = worker.Run(ctx)
+	err = a.Run(ctx)
 	log.Info("automation worker stopped")
 	return err
 }

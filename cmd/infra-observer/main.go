@@ -49,6 +49,8 @@ func run(args []string) error {
 		return cmdProcessor(rest)
 	case "automation-worker":
 		return cmdAutomationWorker(rest)
+	case "inject":
+		return cmdInject(rest)
 	case "deadletter":
 		return cmdDeadLetter(rest)
 	case "replay":
@@ -74,6 +76,7 @@ commands:
   processor           run the processing pipeline (normalize, enrich, state, rules, persist)
   automation-worker   react to alerts: policies, proposals, integrations, adapters
   scenario            apply a scenario to the running simulator
+  inject              publish hostile telemetry (malformed, poison, duplicate...) to watch the system cope
   deadletter          list, replay or purge dead-lettered messages
   replay              republish a stream window so the pipeline processes it again
   script test|test-all|validate|list   develop and check JavaScript extensions

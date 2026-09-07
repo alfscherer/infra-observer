@@ -94,6 +94,11 @@ services:
     <<: *app
     command: ["processor"]
     ports: ["9091:9090"]
+    environment:
+      <<: *env
+      # Extra extension directory for failure-injection demos (make fault-script).
+      INFRA_OBSERVER_SCRIPTING_DIRECTORIES: ./scripts,./scripts-extra
+    volumes: ["./.lab/scripts:/app/scripts-extra:ro"]
     depends_on:
       nats: {condition: service_healthy}
       migrate: {condition: service_completed_successfully}
