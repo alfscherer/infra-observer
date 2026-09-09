@@ -7,7 +7,7 @@ BIN     := bin/infra-observer
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: help setup build test lint fmt check clean integration-test migrate scenario test-scripts validate-scripts run stop reset logs ps smoke package validate deploy rollback test-deploy fail heal inject fault-script fault-script-clear dlq e2e
+.PHONY: help setup build test lint fmt check clean integration-test migrate scenario test-scripts validate-scripts run stop reset logs ps smoke package validate deploy rollback test-deploy fail heal inject fault-script fault-script-clear dlq e2e bench
 
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -121,3 +121,6 @@ dlq: build ## list dead-lettered messages (add ARGS="replay --all" or "purge")
 
 e2e: ## run the end-to-end tests (needs docker for PostgreSQL)
 	./hack/integration-test.sh ./internal/e2e/...
+
+bench: ## local benchmarks (see docs/BENCHMARKS.md for how to read them)
+	$(GO) test -run '^$$' -bench . -benchmem ./internal/normalize ./internal/state ./internal/rules ./internal/pipeline ./internal/messaging ./internal/scripting
